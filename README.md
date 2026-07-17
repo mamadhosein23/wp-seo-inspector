@@ -14,7 +14,7 @@ with distinct permissions for Admins and Technicians.
 - 👤 Customer database with order history
 - 📊 Statistical dashboard with charts (Recharts)
 - 📅 Appointment calendar/scheduling
-- 🔔 Notification syste
+- 🔔 Notification system
 
 ## 🛠️ Tech Stack
 - **Frontend:** React.js + Vite
