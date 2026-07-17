@@ -21,4 +21,4 @@ with distinct permissions for Admins and Technicians.
 - **Styling:** Tailwind CSS
 - **Icons:** Lucide React
 - **Charts:** Recharts
-- **Fonts:** Vazirmatn (Persian) / Inter (English
+- **Fonts:** Vazirmatn (Persian) / Inter (English)
