@@ -8,9 +8,9 @@ import {
   TrendingUp, ShieldAlert, UserCheck, LayoutDashboard, Settings, Sun, Moon, Languages
 } from 'lucide-react';
 
-// ==========================================
+// ========================================
 // ۱. بخش مدیریت تنظیمات (Context) در همین فایل
-// ==========================================
+// ========================================
 const ConfigContext = createContext();
 
 const ConfigProvider = ({ children }) => {
