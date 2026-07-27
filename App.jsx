@@ -15,7 +15,7 @@ const ConfigContext = createContext();
 const ConfigProvider = ({ children }) => {
   const [lang, setLang] = useState(() => localStorage.getItem('lang') || 'fa');
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
-
+  
   useEffect(() => {
     document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
     document.documentElement.lang = lang;
@@ -230,7 +230,7 @@ const DashboardContent = ({ currentUser }) => {
                 <th className="p-4">{isRtl ? 'مشتری' : 'Customer'}</th>
                 <th className="p-4">{isRtl ? 'دستگاه' : 'Device'}</th>
                 <th className="p-4">{isRtl ? 'وضعیت' : 'Status'}</th>
-                <th className="p-4">{isRtl ? 'هزینه (تومان)' : 'Cost (IRR)'}</th>
+                <th className="p-4">{isRtl ? 'هزینه (ریال)' : 'Cost (IRR)'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700 text-xs">
