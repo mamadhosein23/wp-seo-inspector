@@ -1,6 +1,6 @@
 export const TECHNICIANS = [
   { id: 'tech-1', name: 'احمد کریمی', phone: '09131234567', specialty: 'ماشین لباسشویی، ظرفشویی', active: true } 
-  { id: 'tech-2', name: 'سعید نوری', phone: '09139876543', specialty: 'یخچال، کولر گازی', active: true } , 
+  { id: 'tech-2', name: 'سعید نوری', phone: '09139876543', specialty: 'یخچال، کولر گازی', active: true } 
   { id: 'tech-3', name: 'مهدی صادقی', phone: '09135551234', specialty: 'مایکروویو، اجاق گاز', active: false } , 
 ];
 
