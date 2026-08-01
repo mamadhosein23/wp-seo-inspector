@@ -1,298 +1,379 @@
-import requests
-from bs4 import BeautifulSoup
+# backend/app/analyzer.py
+
+import re
 from urllib.parse import urljoin
-from app.schemas import CheckItem, AuditResponse
-from app.utils import normalize_domain, is_internal_link
+
+from bs4 import BeautifulSoup
+
+from app.http_client import fetch_html
+from app.schemas import AuditResponse, CheckItem
 from app.scorer import calculate_score
-
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/126.0.0.0 Safari/537.36"
-    )
-}
+from app.utils import is_internal_link
 
 
 def get_text_content(soup: BeautifulSoup) -> str:
-    for tag in soup(["script", "style", "noscript"]):
-        tag.extract()
+    for element in soup(["script", "style", "noscript", "svg"]):
+        element.decompose()
 
-    text = soup.get_text(separator=" ", strip=True)
-    return " ".join(text.split())
+    return " ".join(soup.get_text(" ", strip=True).split())
 
 
-def analyze_page(url: str) -> AuditResponse:
-    response = requests.get(url, headers=HEADERS, timeout=15, allow_redirects=True)
-    response.raise_for_status()
+def detect_wordpress(soup: BeautifulSoup, html: str) -> bool:
+    generator = soup.find("meta", attrs={"name": "generator"})
+    generator_content = generator.get("content", "").lower() if generator else ""
 
-    final_url = response.url
-    html = response.text
-    soup = BeautifulSoup(html, "lxml")
+    wordpress_signals = [
+        "wordpress" in generator_content,
+        "/wp-content/" in html.lower(),
+        "/wp-includes/" in html.lower(),
+    ]
 
-    base_domain = normalize_domain(final_url)
+    return any(wordpress_signals)
 
+
+def analyze_url(url: str) -> AuditResponse:
+    fetch_result = fetch_html(url)
+
+    soup = BeautifulSoup(fetch_result.html, "lxml")
+    checks: list[CheckItem] = []
+
+    # ---------- Metadata ----------
     title_tag = soup.find("title")
     title = title_tag.get_text(strip=True) if title_tag else None
+    title_length = len(title) if title else 0
 
-    meta_description_tag = soup.find("meta", attrs={"name": "description"})
+    meta_description_tag = soup.find(
+        "meta",
+        attrs={"name": re.compile(r"^description$", re.IGNORECASE)},
+    )
     meta_description = (
         meta_description_tag.get("content", "").strip()
-        if meta_description_tag and meta_description_tag.get("content")
+        if meta_description_tag
+        else None
+    )
+    meta_description_length = len(meta_description) if meta_description else 0
+
+    canonical_tag = soup.find(
+        "link",
+        attrs={"rel": lambda value: value and "canonical" in value},
+    )
+    canonical = (
+        urljoin(fetch_result.final_url, canonical_tag.get("href", ""))
+        if canonical_tag and canonical_tag.get("href")
         else None
     )
 
-    h1_tags = soup.find_all("h1")
-    h2_tags = soup.find_all("h2")
+    robots_tag = soup.find(
+        "meta",
+        attrs={"name": re.compile(r"^robots$", re.IGNORECASE)},
+    )
+    robots_meta = robots_tag.get("content", "").strip() if robots_tag else None
 
+    # ---------- Content ----------
+    h1_count = len(soup.find_all("h1"))
+    h2_count = len(soup.find_all("h2"))
+
+    text_content = get_text_content(soup)
+    word_count = len(re.findall(r"\b[\w'-]+\b", text_content))
+
+    # ---------- Images ----------
     images = soup.find_all("img")
     total_images = len(images)
     images_without_alt = sum(
-        1 for img in images if not img.get("alt") or not img.get("alt").strip()
+        1
+        for image in images
+        if image.get("alt") is None or not image.get("alt", "").strip()
     )
 
-    links = soup.find_all("a", href=True)
+    # ---------- Links ----------
     internal_links = 0
     external_links = 0
 
-    for link in links:
-        href = link.get("href", "").strip()
-        if not href or href.startswith("#") or href.startswith("javascript:"):
+    for anchor in soup.find_all("a", href=True):
+        href = anchor["href"].strip()
+
+        if href.startswith(("#", "mailto:", "tel:", "javascript:")):
             continue
 
-        absolute_url = urljoin(final_url, href)
-
-        if is_internal_link(base_domain, absolute_url):
+        if is_internal_link(href, fetch_result.final_url):
             internal_links += 1
         else:
             external_links += 1
 
-    canonical_tag = soup.find("link", attrs={"rel": "canonical"})
-    has_canonical = canonical_tag is not None and canonical_tag.get("href")
+    # ---------- Open Graph and structured data ----------
+    has_open_graph = bool(
+        soup.find("meta", attrs={"property": re.compile(r"^og:", re.IGNORECASE)})
+    )
 
-    robots_meta = soup.find("meta", attrs={"name": "robots"})
-    has_robots_meta = robots_meta is not None
+    has_structured_data = bool(
+        soup.find("script", attrs={"type": "application/ld+json"})
+    )
 
-    open_graph_tags = soup.find_all("meta", attrs={"property": lambda x: x and x.startswith("og:")})
-    has_open_graph = len(open_graph_tags) > 0
+    is_wordpress = detect_wordpress(soup, fetch_result.html)
 
-    json_ld_script = soup.find("script", attrs={"type": "application/ld+json"})
-    has_structured_data = json_ld_script is not None
-
-    text_content = get_text_content(soup)
-    word_count = len(text_content.split())
-
-    checks = []
-
-    # Title checks
+    # ---------- Audit Rules ----------
     if not title:
-        checks.append(CheckItem(
-            key="title_exists",
-            label="Title Tag",
-            status="error",
-            value=False,
-            message="تگ title وجود ندارد.",
-            recommendation="برای صفحه یک title یکتا و مرتبط تعریف کن."
-        ))
-    else:
-        title_length = len(title)
-        if 30 <= title_length <= 60:
-            checks.append(CheckItem(
-                key="title_length",
-                label="Title Length",
+        checks.append(
+            CheckItem(
+                key="title",
+                label="Title Tag",
+                status="error",
+                value=None,
+                message="The page does not contain a title tag.",
+                recommendation="Add a unique and descriptive title tag.",
+            )
+        )
+    elif 30 <= title_length <= 60:
+        checks.append(
+            CheckItem(
+                key="title",
+                label="Title Tag Length",
                 status="success",
-                value=title_length,
-                message=f"طول title مناسب است ({title_length} کاراکتر)."
-            ))
-        else:
-            checks.append(CheckItem(
-                key="title_length",
-                label="Title Length",
+                value=f"{title_length} characters",
+                message="The title length is within the recommended range.",
+            )
+        )
+    else:
+        checks.append(
+            CheckItem(
+                key="title",
+                label="Title Tag Length",
                 status="warning",
-                value=title_length,
-                message=f"طول title ایده‌آل نیست ({title_length} کاراکتر).",
-                recommendation="title را بین 30 تا 60 کاراکتر نگه دار."
-            ))
+                value=f"{title_length} characters",
+                message="The title length is outside the recommended 30–60 character range.",
+                recommendation="Keep the title between 30 and 60 characters.",
+            )
+        )
 
-    # Meta description checks
     if not meta_description:
-        checks.append(CheckItem(
-            key="meta_description_exists",
-            label="Meta Description",
-            status="error",
-            value=False,
-            message="Meta description وجود ندارد.",
-            recommendation="برای صفحه meta description اختصاصی بنویس."
-        ))
-    else:
-        desc_length = len(meta_description)
-        if 70 <= desc_length <= 160:
-            checks.append(CheckItem(
-                key="meta_description_length",
+        checks.append(
+            CheckItem(
+                key="meta_description",
+                label="Meta Description",
+                status="warning",
+                value=None,
+                message="No meta description was found.",
+                recommendation="Add a compelling meta description between 70 and 160 characters.",
+            )
+        )
+    elif 70 <= meta_description_length <= 160:
+        checks.append(
+            CheckItem(
+                key="meta_description",
                 label="Meta Description Length",
                 status="success",
-                value=desc_length,
-                message=f"طول meta description مناسب است ({desc_length} کاراکتر)."
-            ))
-        else:
-            checks.append(CheckItem(
-                key="meta_description_length",
+                value=f"{meta_description_length} characters",
+                message="The meta description length is optimized.",
+            )
+        )
+    else:
+        checks.append(
+            CheckItem(
+                key="meta_description",
                 label="Meta Description Length",
                 status="warning",
-                value=desc_length,
-                message=f"طول meta description ایده‌آل نیست ({desc_length} کاراکتر).",
-                recommendation="توضیحات متا را حدود 70 تا 160 کاراکتر نگه دار."
-            ))
+                value=f"{meta_description_length} characters",
+                message="The meta description length is outside the recommended 70–160 character range.",
+                recommendation="Keep the meta description between 70 and 160 characters.",
+            )
+        )
 
-    # H1 checks
-    if len(h1_tags) == 1:
-        checks.append(CheckItem(
-            key="h1_count",
-            label="H1 Tag",
-            status="success",
-            value=1,
-            message="تعداد H1 مناسب است."
-        ))
-    elif len(h1_tags) == 0:
-        checks.append(CheckItem(
-            key="h1_count",
-            label="H1 Tag",
-            status="error",
-            value=0,
-            message="هیچ H1ای پیدا نشد.",
-            recommendation="برای صفحه دقیقاً یک H1 تعریف کن."
-        ))
+    if h1_count == 1:
+        checks.append(
+            CheckItem(
+                key="h1_count",
+                label="H1 Heading",
+                status="success",
+                value=h1_count,
+                message="Exactly one H1 heading was found.",
+            )
+        )
+    elif h1_count == 0:
+        checks.append(
+            CheckItem(
+                key="h1_count",
+                label="H1 Heading",
+                status="error",
+                value=h1_count,
+                message="No H1 heading was found.",
+                recommendation="Add exactly one descriptive H1 heading.",
+            )
+        )
     else:
-        checks.append(CheckItem(
-            key="h1_count",
-            label="H1 Tag",
-            status="warning",
-            value=len(h1_tags),
-            message=f"{len(h1_tags)} عدد H1 پیدا شد.",
-            recommendation="بهتر است فقط یک H1 در صفحه وجود داشته باشد."
-        ))
+        checks.append(
+            CheckItem(
+                key="h1_count",
+                label="H1 Heading",
+                status="warning",
+                value=h1_count,
+                message=f"{h1_count} H1 headings were found.",
+                recommendation="Use exactly one primary H1 heading per page.",
+            )
+        )
 
-    # Image alt checks
-    if total_images == 0:
-        checks.append(CheckItem(
-            key="images_presence",
-            label="Images",
-            status="info",
-            value=0,
-            message="هیچ تصویری در صفحه یافت نشد."
-        ))
-    elif images_without_alt == 0:
-        checks.append(CheckItem(
-            key="image_alt_coverage",
-            label="Image Alt Coverage",
-            status="success",
-            value=total_images,
-            message="همه تصاویر دارای alt هستند."
-        ))
+    if word_count < 150:
+        checks.append(
+            CheckItem(
+                key="word_count",
+                label="Content Length",
+                status="warning",
+                value=f"{word_count} words",
+                message="The page has relatively thin textual content.",
+                recommendation="Add useful, original, and topic-focused content.",
+            )
+        )
     else:
-        checks.append(CheckItem(
-            key="image_alt_coverage",
-            label="Image Alt Coverage",
-            status="warning",
-            value=images_without_alt,
-            message=f"{images_without_alt} تصویر بدون alt پیدا شد.",
-            recommendation="برای همه تصاویر alt توصیفی و مرتبط بنویس."
-        ))
+        checks.append(
+            CheckItem(
+                key="word_count",
+                label="Content Length",
+                status="success",
+                value=f"{word_count} words",
+                message="The page contains a reasonable amount of textual content.",
+            )
+        )
 
-    # Canonical
-    if has_canonical:
-        checks.append(CheckItem(
-            key="canonical_tag",
-            label="Canonical Tag",
-            status="success",
-            value=True,
-            message="تگ canonical وجود دارد."
-        ))
+    if images_without_alt > 0:
+        checks.append(
+            CheckItem(
+                key="image_alt",
+                label="Image Alt Attributes",
+                status="warning",
+                value=f"{images_without_alt} of {total_images} missing",
+                message="One or more images have missing or empty alt attributes.",
+                recommendation="Add descriptive alt text to meaningful images.",
+            )
+        )
     else:
-        checks.append(CheckItem(
-            key="canonical_tag",
-            label="Canonical Tag",
-            status="warning",
-            value=False,
-            message="تگ canonical پیدا نشد.",
-            recommendation="برای جلوگیری از مشکلات محتوای تکراری canonical تعریف کن."
-        ))
+        checks.append(
+            CheckItem(
+                key="image_alt",
+                label="Image Alt Attributes",
+                status="success",
+                value=f"{total_images} images checked",
+                message="All detected images include alt attributes.",
+            )
+        )
 
-    # Robots meta
-    if has_robots_meta:
-        checks.append(CheckItem(
-            key="robots_meta",
-            label="Robots Meta",
-            status="success",
-            value=True,
-            message="متای robots وجود دارد."
-        ))
+    if not canonical:
+        checks.append(
+            CheckItem(
+                key="canonical",
+                label="Canonical URL",
+                status="warning",
+                value=None,
+                message="No canonical URL was detected.",
+                recommendation="Add a self-referencing canonical link element.",
+            )
+        )
     else:
-        checks.append(CheckItem(
-            key="robots_meta",
-            label="Robots Meta",
-            status="info",
-            value=False,
-            message="متای robots پیدا نشد."
-        ))
+        checks.append(
+            CheckItem(
+                key="canonical",
+                label="Canonical URL",
+                status="success",
+                value=canonical,
+                message="A canonical URL was detected.",
+            )
+        )
 
-    # Open Graph
-    if has_open_graph:
-        checks.append(CheckItem(
+    robots_value = (robots_meta or "").lower()
+    if "noindex" in robots_value:
+        checks.append(
+            CheckItem(
+                key="robots",
+                label="Robots Meta Tag",
+                status="error",
+                value=robots_meta,
+                message="The page contains a noindex directive.",
+                recommendation="Remove noindex if this page should appear in search results.",
+            )
+        )
+    else:
+        checks.append(
+            CheckItem(
+                key="robots",
+                label="Robots Meta Tag",
+                status="info",
+                value=robots_meta or "Not specified",
+                message="No noindex directive was detected.",
+            )
+        )
+
+    checks.append(
+        CheckItem(
             key="open_graph",
-            label="Open Graph Tags",
-            status="success",
-            value=True,
-            message="تگ‌های Open Graph وجود دارند."
-        ))
-    else:
-        checks.append(CheckItem(
-            key="open_graph",
-            label="Open Graph Tags",
-            status="warning",
-            value=False,
-            message="تگ‌های Open Graph پیدا نشدند.",
-            recommendation="برای اشتراک‌گذاری بهتر در شبکه‌های اجتماعی Open Graph اضافه کن."
-        ))
+            label="Open Graph Metadata",
+            status="success" if has_open_graph else "warning",
+            value=has_open_graph,
+            message=(
+                "Open Graph metadata was detected."
+                if has_open_graph
+                else "Open Graph metadata was not detected."
+            ),
+            recommendation=(
+                None
+                if has_open_graph
+                else "Add Open Graph tags to improve social media previews."
+            ),
+        )
+    )
 
-    # Structured data
-    if has_structured_data:
-        checks.append(CheckItem(
+    checks.append(
+        CheckItem(
             key="structured_data",
             label="Structured Data",
-            status="success",
-            value=True,
-            message="Structured data یافت شد."
-        ))
-    else:
-        checks.append(CheckItem(
-            key="structured_data",
-            label="Structured Data",
-            status="warning",
-            value=False,
-            message="Structured data پیدا نشد.",
-            recommendation="از schema markup مناسب نوع صفحه استفاده کن."
-        ))
+            status="success" if has_structured_data else "warning",
+            value=has_structured_data,
+            message=(
+                "JSON-LD structured data was detected."
+                if has_structured_data
+                else "No JSON-LD structured data was detected."
+            ),
+            recommendation=(
+                None
+                if has_structured_data
+                else "Add valid schema markup relevant to the page content."
+            ),
+        )
+    )
+
+    checks.append(
+        CheckItem(
+            key="wordpress_detection",
+            label="WordPress Detection",
+            status="info",
+            value=is_wordpress,
+            message=(
+                "WordPress indicators were detected."
+                if is_wordpress
+                else "No clear WordPress indicators were detected."
+            ),
+        )
+    )
 
     score = calculate_score(checks)
 
     return AuditResponse(
         url=url,
-        final_url=final_url,
+        final_url=fetch_result.final_url,
         score=score,
+        http_status_code=fetch_result.status_code,
+        response_time_ms=fetch_result.response_time_ms,
+        content_type=fetch_result.content_type,
         title=title,
         meta_description=meta_description,
-        h1_count=len(h1_tags),
-        h2_count=len(h2_tags),
+        canonical=canonical,
+        robots_meta=robots_meta,
+        h1_count=h1_count,
+        h2_count=h2_count,
         word_count=word_count,
         total_images=total_images,
         images_without_alt=images_without_alt,
         internal_links=internal_links,
         external_links=external_links,
-        has_canonical=bool(has_canonical),
-        has_robots_meta=has_robots_meta,
         has_open_graph=has_open_graph,
         has_structured_data=has_structured_data,
-        checks=checks
+        is_wordpress=is_wordpress,
+        checks=checks,
     )
