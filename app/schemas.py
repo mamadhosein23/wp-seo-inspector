@@ -1,5 +1,10 @@
-from pydantic import BaseModel, HttpUrl
-from typing import List, Optional
+# backend/app/schemas.py
+
+from typing import Literal
+
+from pydantic import BaseModel, Field, HttpUrl
+
+CheckStatus = Literal["success", "warning", "error", "info"]
 
 
 class AuditRequest(BaseModel):
@@ -9,27 +14,39 @@ class AuditRequest(BaseModel):
 class CheckItem(BaseModel):
     key: str
     label: str
-    status: str  # success | warning | error | info
-    value: Optional[str | int | bool] = None
+    status: CheckStatus
+    value: str | int | bool | None = None
     message: str
-    recommendation: Optional[str] = None
+    recommendation: str | None = None
 
 
 class AuditResponse(BaseModel):
     url: str
     final_url: str
-    score: int
-    title: Optional[str] = None
-    meta_description: Optional[str] = None
+
+    score: int = Field(ge=0, le=100)
+
+    http_status_code: int
+    response_time_ms: int
+    content_type: str
+
+    title: str | None
+    meta_description: str | None
+    canonical: str | None
+    robots_meta: str | None
+
     h1_count: int
     h2_count: int
     word_count: int
+
     total_images: int
     images_without_alt: int
+
     internal_links: int
     external_links: int
-    has_canonical: bool
-    has_robots_meta: bool
+
     has_open_graph: bool
     has_structured_data: bool
-    checks: List[CheckItem]
+    is_wordpress: bool
+
+    checks: list[CheckItem]
