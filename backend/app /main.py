@@ -1,6 +1,6 @@
 # backend/app/main.py
 
-from fastapi import FastAPI, HTTPExce
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.analyzer import analyze_url
