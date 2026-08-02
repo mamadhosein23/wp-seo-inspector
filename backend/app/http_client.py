@@ -1,5 +1,3 @@
-# backend/app/http_client.py
-
 import time
 from dataclasses import dataclass
 
