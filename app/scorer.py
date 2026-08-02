@@ -1,5 +1,3 @@
-# backend/app/scorer.py
-
 from app.schemas import CheckItem
 
 
