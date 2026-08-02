@@ -1,5 +1,3 @@
-# backend/app/security.py
-
 import ipaddress
 import socket
 from urllib.parse import urlparse
