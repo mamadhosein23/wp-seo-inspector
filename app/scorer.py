@@ -1,4 +1,4 @@
-from app.schemas import Che
+from app.schemas import Ch
 
 CHECK_WEIGHTS: dict[str, int] = {
     "title": 3,
