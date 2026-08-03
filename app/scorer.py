@@ -1,7 +1,5 @@
 from app.schemas import CheckItem
 
-# وزن هر check بر اساس اهمیتش در سئو (نه فقط status)
-# کلید = check.key، مقدار = ضریب اهمیت (1 = عادی، بیشتر = مهم‌تر)
 CHECK_WEIGHTS: dict[str, int] = {
     "title": 3,
     "meta_description": 2,
@@ -10,7 +8,6 @@ CHECK_WEIGHTS: dict[str, int] = {
     "robots_meta": 2,
     "images_without_alt": 1,
     "structured_data": 1,
-    # پیش‌فرض برای کلیدهای تعریف‌نشده: 1
 }
 
 BASE_DEDUCTION_BY_STATUS: dict[str, int] = {
