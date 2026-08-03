@@ -1,4 +1,4 @@
-from datetime import datetim
+from datetime import dateti
 from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl
