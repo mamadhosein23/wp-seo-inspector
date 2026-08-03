@@ -1,4 +1,4 @@
-from app.schemas import CheckIte
+from app.schemas import CheckIt
 
 CHECK_WEIGHTS: dict[str, int] = {
     "title": 3,
