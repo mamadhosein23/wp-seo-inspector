@@ -1,4 +1,3 @@
-// frontend/src/lib/api.ts
 import { AuditResponse } from "@/types/audit";
 
 // آدرس لوکال بک‌اند (FastAPI)
