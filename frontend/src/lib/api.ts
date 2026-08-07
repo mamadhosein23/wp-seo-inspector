@@ -122,4 +122,17 @@ export const performAudit = async (
     return data;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("درخواست بیش از حد طول 
+      throw new Error("درخواست بیش از حد طول کشید. لطفاً دوباره تلاش کن.");
+    }
+
+    if (error instanceof TypeError) {
+      throw new Error(
+        "ارتباط با سرور برقرار نشد. بک‌اند، CORS یا اتصال شبکه را بررسی کن."
+      );
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
