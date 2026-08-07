@@ -1,3 +1,5 @@
+// frontend/src/types/audit.ts
+
 export const CHECK_STATUSES = [
   "success",
   "warning",
