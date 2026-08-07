@@ -1,29 +1,71 @@
 // frontend/src/types/audit.ts
 
-export type CheckStatus = "success" | "warning" | "error" | "info";
+export const CHECK_STATUSES = [
+  "success",
+  "warning",
+  "error",
+  "info",
+] as const;
 
+export type CheckStatus = (typeof CHECK_STATUSES)[number];
+
+export type Nullable<T> = T | null;
+
+export type AuditScore = number;
+
+export type HttpStatusCode = number;
+
+export type Milliseconds = number;
+
+export type SeoCheckValue = string | number | boolean | null;
+
+export type AuditCheckKey =
+  | "http_status"
+  | "response_time"
+  | "title"
+  | "meta_description"
+  | "canonical"
+  | "robots_meta"
+  | "h1"
+  | "h2"
+  | "word_count"
+  | "images_alt"
+  | "internal_links"
+  | "external_links"
+  | "open_graph"
+  | "structured_data"
+  | "wordpress"
+  | "content_type"
+  | string;
+
+/**
+ * Represents a single SEO/audit check result.
+ */
 export interface CheckItem {
-  key: string;
+  key: AuditCheckKey;
   label: string;
   status: CheckStatus;
-  value: string | number | boolean | null;
+  value: SeoCheckValue;
   message: string;
-  recommendation: string | null;
+  recommendation: Nullable<string>;
 }
 
+/**
+ * Main audit response returned from backend.
+ */
 export interface AuditResponse {
   url: string;
   final_url: string;
-  score: number;
+  score: AuditScore;
 
-  http_status_code: number;
-  response_time_ms: number;
+  http_status_code: HttpStatusCode;
+  response_time_ms: Milliseconds;
   content_type: string;
 
-  title: string | null;
-  meta_description: string | null;
-  canonical: string | null;
-  robots_meta: string | null;
+  title: Nullable<string>;
+  meta_description: Nullable<string>;
+  canonical: Nullable<string>;
+  robots_meta: Nullable<string>;
 
   h1_count: number;
   h2_count: number;
