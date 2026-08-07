@@ -1,5 +1,5 @@
 import json
-impor
+impo
 from typing import Any, Optional
 from urllib.parse import urljoin
 
