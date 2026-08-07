@@ -131,7 +131,7 @@ export const performAudit = async (
       );
     }
 
-    throw error;d
+    throw error;
   } finally {
     window.clearTimeout(timeoutId);
   }
