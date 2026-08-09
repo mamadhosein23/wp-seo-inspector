@@ -1,23 +1,3 @@
-import json
-import re
-from typing import Any, Optional
-from urllib.parse import urljoin
-
-from bs4 import BeautifulSoup, Comment, NavigableString, Tag
-
-from app.http_client import fetch_html
-from app.schemas import AuditResponse, CheckItem
-from app.scorer import calculate_score
-from app.utils import is_internal_link
-
-
-TITLE_MIN_LENGTH = 30
-TITLE_MAX_LENGTH = 60
-
-META_DESCRIPTION_MIN_LENGTH = 70
-META_DESCRIPTION_MAX_LENGTH = 160
-
-MIN_WORD_COUNT = 150
 
 IGNORED_LINK_PREFIXES = ("#", "mailto:", "tel:", "javascript:")
 
