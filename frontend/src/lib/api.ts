@@ -1,4 +1,4 @@
-// frontend/src/services/auditApi.ts
+// frontend/src//auditApi.ts
 
 import type { AuditResponse } from "@/types/audit";
 
