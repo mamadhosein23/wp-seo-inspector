@@ -1,4 +1,4 @@
-// frontend/srcts
+// frontend/
 
 import type { AuditResponse } from "@/types/audit";
 
