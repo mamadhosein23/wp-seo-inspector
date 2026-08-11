@@ -1,5 +1,4 @@
-from datetime import datetime
-
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl
@@ -18,46 +17,37 @@ class CheckItem(BaseModel):
     value: str | int | bool | None = None
     message: str
     recommendation: str | None = None
+    penalty: int = 0
 
 
 class MetaInfo(BaseModel):
-    """اطلاعات متا و تگ‌های SEO"""
-
-    title: str | None
-    meta_description: str | None
-    canonical: str | None
-    robots_meta: str | None
+    title: str | None = None
+    meta_description: str | None = None
+    canonical: str | None = None
+    robots_meta: str | None = None
 
 
 class ContentStats(BaseModel):
-    """آمار محتوای صفحه"""
-
-    h1_count: int
-    h2_count: int
-    word_count: int
+    h1_count: int = 0
+    h2_count: int = 0
+    word_count: int = 0
 
 
 class ImageStats(BaseModel):
-    """آمار تصاویر"""
-
-    total_images: int
-    images_without_alt: int
+    total_images: int = 0
+    images_without_alt: int = 0
 
 
 class LinkStats(BaseModel):
-    """آمار لینک‌ها"""
-
-    internal_links: int
-    external_links: int
+    internal_links: int = 0
+    external_links: int = 0
 
 
 class AuditResponse(BaseModel):
-    """پاسخ کامل آنالیز SEO"""
-
     url: HttpUrl
     final_url: HttpUrl
 
-    score: int = Field(ge=0, le=100, description="امتیاز کلی SEO از 0 تا 100")
+    score: int = Field(ge=0, le=100, description="SEO score from 0 to 100")
 
     http_status_code: int
     response_time_ms: int
@@ -68,13 +58,13 @@ class AuditResponse(BaseModel):
     images: ImageStats
     links: LinkStats
 
-    has_open_graph: bool
-    has_structured_data: bool
-    is_wordpress: bool
+    has_open_graph: bool = False
+    has_structured_data: bool = False
+    is_wordpress: bool = False
 
-    checks: list[CheckItem]
+    checks: list[CheckItem] = Field(default_factory=list)
 
     checked_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="زمان اجرای audit به UTC",
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Audit execution time in UTC",
     )
