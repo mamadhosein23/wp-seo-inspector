@@ -9,7 +9,6 @@ CheckStatus = Literal["success", "warning", "error", "info"]
 class AuditRequest(BaseModel):
     url: HttpUrl
 
-
 class CheckItem(BaseModel):
     key: str
     label: str
