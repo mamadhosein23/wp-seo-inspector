@@ -30,7 +30,6 @@ def calculate_score(checks: list[CheckItem]) -> int:
         rule = CHECK_REGISTRY.get(check.key)
         if not rule:
             continue
-
         # فقط اگر وضعیت check واقعاً مشکل‌دار باشد جریمه اعمال شود
         if check.status in ("warning", "error"):
             penalty = rule["penalty"]
