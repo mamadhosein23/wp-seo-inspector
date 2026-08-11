@@ -1,7 +1,6 @@
 from enum import Enum
 from app.schemas import CheckItem
 
-
 class Severity(Enum):
     SUCCESS = "success"
     INFO = "info"
