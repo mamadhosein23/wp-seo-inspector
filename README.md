@@ -1,53 +1,62 @@
-# WP SEO Inspector 🔍
-**A Modular Technical SEO Audit Engine & Analytics Dashboard.**
+# 🔍 WP SEO Inspector
+**A High-Performance Technical SEO Audit Engine & Analytics Interface.**
 
-WP SEO Inspector is a full-stack tool designed to perform deep-dive technical audits of web pages. It focuses on extracting critical on-page signals, validating SEO best practices, and calculating a transparent "SEO Health Score" based on a rule-driven engine.
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Next.js](https://img.shields.io/badge/Frontend-Next.js%2014-black?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/Language-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Python](https://img.shields.io/badge/Language-Python%203.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+
+WP SEO Inspector is a specialized auditing engine designed to dissect web pages and evaluate their technical SEO health. By combining a robust Python-based crawler with a rule-driven scoring system, it provides developers and SEO specialists with actionable insights into page architecture, metadata integrity, and social signals.
 
 ---
 
-## 🚀 Key Modules (Under Development)
+## 🏗 Modular System Architecture
 
-The system is architected to be modular and extensible:
+The project follows a strict **Separation of Concerns (SoC)** to ensure maintainability and speed:
 
-- **`http_client.py`**: Asynchronous fetching engine using `httpx` with custom User-Agent rotations and error handling for common HTTP status codes.
-- **`analyzer.py`**: High-speed DOM parsing using `BeautifulSoup4` and `lxml`. Extracts metadata, heading hierarchies, link structures, and media assets.
-- **`scorer.py`**: A rule-based scoring algorithm that evaluates page health. It assigns weighted penalties for missing tags, broken hierarchies, or accessibility issues.
-- **`schemas.py`**: Strict data validation using `Pydantic` to ensure consistent communication between the FastAPI backend and Next.js frontend.
+- **Fetcher (`http_client.py`)**: Asynchronous HTTP client utilizing `httpx`. Handles redirects, custom User-Agents, and connection timeouts to mimic real-world crawling scenarios.
+- **Parser (`analyzer.py`)**: Leveraging `BeautifulSoup4` with the `lxml` engine for sub-millisecond DOM traversal. It extracts over 20+ SEO signals.
+- **Engine (`scorer.py`)**: The brain of the project. It runs a weighted heuristic algorithm to transform raw HTML data into a standardized health score (0-100).
+- **Interface (`Next.js Dashboard`)**: A reactive dashboard that visualizes data points through SVG gauges and severity-sorted issue cards.
+
+---
+
+## 📊 The Scoring Algorithm (Logic-First)
+
+The audit isn't just a checklist; it's a **Deductive Weighting System**. We start at **100** and deduct based on technical impact:
+
+| Metric Group | Key Indicators | Max Impact |
+| :--- | :--- | :--- |
+| **Indexability** | Robots Meta, Canonical Tags, Status Codes | `-40 pts` |
+| **Structure** | H1-H6 Hierarchy, Single H1 Enforcement | `-20 pts` |
+| **Metadata** | Title & Description Length/Presence | `-25 pts` |
+| **Accessibility** | Image Alt Text coverage, Link Descriptors | `-15 pts` |
+| **Social Graph** | OpenGraph (OG) and Twitter Card tags | `-10 pts` |
 
 ---
 
 ## 🛠 Tech Stack
 
-### Backend (The Engine)
-- **FastAPI**: Asynchronous Python framework for high-performance API endpoints.
-- **BS4 + lxml**: Robust HTML parsing and data extraction.
-- **Pydantic**: Type hinting and data serialization.
-
-### Frontend (The Dashboard)
-- **Next.js 14+**: App Router-based architecture for the analytics interface.
-- **Tailwind CSS**: Responsive and minimalist UI design.
-- **TypeScript**: Ensuring end-to-end type safety.
+- **Backend:** FastAPI (Async/Await), Pydantic v2, BeautifulSoup4, LXML.
+- **Frontend:** Next.js 14 (App Router), Tailwind CSS, TypeScript, Recharts.
+- **API Design:** RESTful principles with JSON-Schema validation.
 
 ---
 
-## 📊 Scoring Methodology
-
-Unlike generic tools, the score here is **deductive**. Every page starts at **100 points**, and points are deducted based on severity:
-
-| Severity | Issue Example | Penalty |
-| :--- | :--- | :--- |
-| 🔴 **Critical** | Missing H1 tag, Noindex meta, or 4xx/5xx status | -20 to -40 |
-| 🟡 **Warning** | Title too long/short, Missing Alt tags, Missing Meta Description | -10 to -15 |
-| 🔵 **Notice** | Missing OpenGraph tags, Sub-optimal heading density | -5 |
-
----
-
-## 🏗 Project Structure
+## 📂 Repository Structure
 ```text
-backend/app/
-├── main.py          # API Routes & Entry Point
-├── http_client.py   # Page Fetching Logic
-├── analyzer.py      # HTML Parsing & Extraction
-├── scorer.py        # SEO Scoring Logic
-├── schemas.py       # Pydantic Data Models
-└── security.py      # Auth & Security Middlewares
+├── backend/app/
+│   ├── main.py          # FastAPI Entry Point & Routing
+│   ├── analyzer.py      # DOM Extraction Logic
+│   ├── scorer.py        # Rule-based Scoring Engine
+│   ├── http_client.py   # Async Web Fetching
+│   └── schemas.py       # Pydantic Models for Type Safety
+└── frontend/src/
+├── app/             # Next.js Pages & Layouts
+├── components/      # UI Elements (AuditDashboard, UrlForm)
+└── lib/             # API Fetching & Utility functions
+
+
+
+
+
