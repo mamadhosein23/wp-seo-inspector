@@ -18,29 +18,24 @@ class CheckItem(BaseModel):
     recommendation: str | None = None
     penalty: int = 0
 
-
 class MetaInfo(BaseModel):
     title: str | None = None
     meta_description: str | None = None
     canonical: str | None = None
     robots_meta: str | None = None
 
-
 class ContentStats(BaseModel):
     h1_count: int = 0
     h2_count: int = 0
     word_count: int = 0
 
-
 class ImageStats(BaseModel):
     total_images: int = 0
     images_without_alt: int = 0
 
-
 class LinkStats(BaseModel):
     internal_links: int = 0
     external_links: int = 0
-
 
 class AuditResponse(BaseModel):
     url: HttpUrl
