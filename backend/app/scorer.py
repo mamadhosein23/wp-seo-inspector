@@ -23,7 +23,6 @@ CHECK_REGISTRY = {
     "structured_data_missing": {"penalty": 5, "severity": Severity.INFO},
 }
 
-
 def calculate_score(checks: list[CheckItem]) -> int:
     score = 100
 
