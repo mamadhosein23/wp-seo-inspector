@@ -124,7 +124,6 @@
     @apply card-base p-6 flex flex-col gap-4;
   }
 
-  /* --- دکمه‌ها (پایه) --- */
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium
            transition-colors focus-visible:outline-none focus-visible:ring-2
