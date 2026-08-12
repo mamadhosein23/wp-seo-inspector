@@ -82,7 +82,6 @@
     color-scheme: dark;
   }
 
-  /* --- Reset & پایه --- */
   * {
     @apply border-border outline-ring/50;
   }
