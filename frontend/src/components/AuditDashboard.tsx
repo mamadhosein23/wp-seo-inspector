@@ -1,4 +1,3 @@
-// frontend/src/components/AuditDashboard.tsx
 import { AuditResponse, CheckItem, CheckStatus } from "@/types/audit";
 import { BadgeCheck, XCircle, AlertTriangle, Info, Zap, Link } from "lucide-react";
 import LinkComponent from "next/link"; // برای لینک به بیرون
