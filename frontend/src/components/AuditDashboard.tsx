@@ -1,6 +1,6 @@
 import { AuditResponse, CheckItem, CheckStatus } from "@/types/audit";
 import { BadgeCheck, XCircle, AlertTriangle, Info, Zap, Link } from "lucide-react";
-import LinkComponent from "next/link"; // برای لینک به بیرون
+import LinkComponent from "next/link" ;
 
 interface AuditDashboardProps {
   result: AuditResponse;
