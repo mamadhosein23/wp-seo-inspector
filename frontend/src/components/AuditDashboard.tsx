@@ -23,7 +23,6 @@ const getStatusClasses = (status: CheckStatus) => {
 }
 
 
-// ----------------------------------------------------
 
 const ScoreCard: React.FC<{ score: number }> = ({ score }) => {
   const color = score > 90 ? 'text-green-500' : score > 70 ? 'text-yellow-500' : 'text-red-500';
