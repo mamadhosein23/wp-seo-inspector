@@ -23,7 +23,6 @@ const getStatusClasses = (status: CheckStatus) => {
 }
 
 
-// Sub-Components
 // ----------------------------------------------------
 
 const ScoreCard: React.FC<{ score: number }> = ({ score }) => {
