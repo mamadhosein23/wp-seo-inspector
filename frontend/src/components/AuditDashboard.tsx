@@ -1,4 +1,4 @@
-// frontend/src/
+// frontend/
 import { memo, useMemo } from "react";
 import { AuditResponse, CheckItem, CheckStatus } from "@/types/audit";
 import {
