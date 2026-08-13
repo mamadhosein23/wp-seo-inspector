@@ -1,4 +1,4 @@
-// frontend/src/components/AuditDashboard.tsx
+// frontend/src/components/.tsx
 import { memo, useMemo } from "react";
 import { AuditResponse, CheckItem, CheckStatus } from "@/types/audit";
 import {
