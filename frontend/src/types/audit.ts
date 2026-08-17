@@ -1,5 +1,4 @@
 
-
 export const CHECK_STATUSES = [
   "success",
   "warning",
