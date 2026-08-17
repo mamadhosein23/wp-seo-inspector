@@ -127,7 +127,6 @@ export const performAudit = async (
         "ارتباط با سرور برقرار نشد. بک‌اند، CORS یا اتصال شبکه را بررسی کن."
       );
     }
-
     throw error;
   } finally {
     window.clearTimeout(timeoutId);
