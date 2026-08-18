@@ -1,4 +1,4 @@
-import { memo, useMemo } 
+import { memo, useMemo }
 import { AuditResponse, CheckItem, CheckStatus } from "@/types/audit";
 import {
   BadgeCheck, XCircle, AlertTriangle, Info, Zap,
