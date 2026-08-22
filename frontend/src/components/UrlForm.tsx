@@ -1,4 +1,4 @@
-// frontend//components/
+// frontend//components
 "use client";
 
 import { useState } from "react";
