@@ -1,36 +1,48 @@
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
+
 @layer base {
   :root {
+    /* تم روشن - پالت رنگی خنثی و مدرن HSL */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 224 71.4% 4.1%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 224 71.4% 4.1%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 224 71.4% 4.1%;
 
     --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --secondary: 220 14.3% 95.9%;
+    --secondary-foreground: 220.9 39.3% 11%;
 
-    --success: 142.1 76.2% 36.3%;
-    --success-foreground: 355.7 100% 97.3%;
-    --warning: 38 92.2% 50%;
-    --warning-foreground: 355.7 100% 97.3%;
+    --muted: 220 14.3% 95.9%;
+    --muted-foreground: 220 8.9% 46.1%;
+
+    --accent: 220 14.3% 95.9%;
+    --accent-foreground: 220.9 39.3% 11%;
+
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    --success: 142.1 76.2% 36.3%;
+    --success-foreground: 355.7 100% 97.3%;
+
+    --warning: 38 92.2% 50%;
+    --warning-foreground: 48 96% 89%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
     --ring: 221.2 83.2% 53.3%;
 
+    /* چارت‌ها و نمودارها */
     --chart-1: 221.2 83.2% 53.3%;
     --chart-2: 142.1 76.2% 36.3%;
     --chart-3: 38 92.2% 50%;
@@ -38,67 +50,97 @@
     --chart-5: 350 89.2% 60.2%;
 
     --radius: 0.75rem;
+
+    /* متغیرهای پنل و سایدبار */
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    /* تم تاریک - Deep Zinc / Slate Contrast */
+    --background: 224 71.4% 4.1%;
+    --foreground: 210 20% 98%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --card: 224 71.4% 4.1%;
+    --card-foreground: 210 20% 98%;
+
+    --popover: 224 71.4% 4.1%;
+    --popover-foreground: 210 20% 98%;
 
     --primary: 217.2 91.2% 59.8%;
     --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --secondary: 215 27.9% 16.9%;
+    --secondary-foreground: 210 20% 98%;
+
+    --muted: 215 27.9% 16.9%;
+    --muted-foreground: 217.9 10.6% 64.9%;
+
+    --accent: 215 27.9% 16.9%;
+    --accent-foreground: 210 20% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
 
     --success: 142.1 70.6% 45.3%;
     --success-foreground: 210 40% 98%;
+
     --warning: 38 92.2% 50%;
-    --warning-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 72.2% 50.6%;
-    --destructive-foreground: 210 40% 98%;
+    --warning-foreground: 48 96% 89%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
 
+    --border: 215 27.9% 16.9%;
+    --input: 215 27.9% 16.9%;
+    --ring: 217.2 91.2% 59.8%;
+
+    /* چارت‌ها در حالت دارک مود */
     --chart-1: 217.2 91.2% 59.8%;
     --chart-2: 142.1 70.6% 45.3%;
     --chart-3: 38 92.2% 50%;
     --chart-4: 262.1 83.3% 57.8%;
     --chart-5: 350 89.2% 60.2%;
 
+    /* سایدبار در دارک مود */
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
     color-scheme: dark;
   }
+}
 
+@layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
 
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
+    tab-size: 4;
   }
 
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
     font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
     text-rendering: optimizeLegibility;
+    min-height: 100vh;
   }
 
-  img,
-  video {
-    @apply max-w-full h-auto;
-  }
-
+  /* حذف کلیدهای Spin در اینپوت‌های عددی */
   input[type="number"]::-webkit-outer-spin-button,
   input[type="number"]::-webkit-inner-spin-button {
     -webkit-appearance: none;
@@ -112,69 +154,83 @@
 }
 
 @layer components {
+  /* المان‌های پایه کارت و کانتینرها */
   .card-base {
     @apply rounded-[var(--radius)] border bg-card text-card-foreground shadow-sm transition-all duration-200;
   }
+
   .card-hover {
-    @apply hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5;
+    @apply hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5;
   }
+
   .card-dashboard {
     @apply card-base p-6 flex flex-col gap-4;
   }
 
+  /* دکمه‌های فرم و عملیات */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium
-           transition-colors focus-visible:outline-none focus-visible:ring-2
+    @apply inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold
+           transition-all duration-150 focus-visible:outline-none focus-visible:ring-2
            focus-visible:ring-ring focus-visible:ring-offset-2
-           disabled:pointer-events-none disabled:opacity-50;
+           disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98];
   }
+
   .btn-primary {
-    @apply btn bg-primary text-primary-foreground hover:bg-primary/90;
+    @apply btn bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/25;
   }
 
-  /* --- وضعیت‌ها برای داشبورد --- */
+  .btn-secondary {
+    @apply btn bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+
+  .btn-outline {
+    @apply btn border border-input bg-background hover:bg-accent hover:text-accent-foreground;
+  }
+
+  /* بج‌ها و وضعیت‌ها (Status Badges) */
   .chip {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold select-none;
   }
+
   .chip-success {
-    @apply chip bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400;
+    @apply chip bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 dark:text-emerald-400;
   }
+
   .chip-warning {
-    @apply chip bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400;
+    @apply chip bg-amber-500/10 text-amber-600 border border-amber-500/20 dark:text-amber-400;
   }
+
   .chip-error {
-    @apply chip bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400;
+    @apply chip bg-red-500/10 text-red-600 border border-red-500/20 dark:text-red-400;
+  }
+
+  .chip-info {
+    @apply chip bg-sky-500/10 text-sky-600 border border-sky-500/20 dark:text-sky-400;
+  }
+
+  /* افکت شیشه‌ای مدرن */
+  .glass {
+    @apply bg-background/70 backdrop-blur-md border border-border/50;
   }
 }
 
-/* --- اسکرول‌بار اختصاصی --- */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  @apply bg-muted-foreground/20 rounded-full hover:bg-muted-foreground/40;
-  transition: background-color 150ms;
-}
+/* بهینه‌سازی اسکرول‌بار مرورگر */
+@layer utilities {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
 
-/* --- Glass effect --- */
-.glass {
-  @apply bg-white/70 dark:bg-zinc-950/70 backdrop-blur-md
-         border border-white/20 dark:border-zinc-800/20;
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-/* --- أبوتیلیتی دستی (Tailwind پوشش نمی‌دهد) --- */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
+  ::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.4);
+  }
 }
