@@ -1,5 +1,3 @@
-// frontend/src/types/audit.ts
-
 export const CHECK_STATUSES = ["success", "warning", "error", "info"] as const;
 export type CheckStatus = (typeof CHECK_STATUSES)[number];
 
