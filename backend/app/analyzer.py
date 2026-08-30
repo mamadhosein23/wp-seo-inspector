@@ -1,611 +1,297 @@
+"""
+WP SEO Inspector - DOM Parsing & Extraction Engine.
+
+Dissects raw HTML documents using BeautifulSoup4 (lxml engine) to extract
+20+ technical SEO signals, metadata, heading trees, and semantic structure.
+"""
+
+from __future__ import annotations
+
 import json
 import re
-from typing import Any, Optional
-from urllib.parse import urljoin
+from typing import Any, Final, List, Optional, Set, Tuple
+from urllib.parse import urljoin, urlparse
+
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
-from app.http_client import fetch_html
-from app.schemas import AuditResponse, CheckItem
-from app.scorer import calculate_score
+
+from app.schemas import AuditReportData, CheckItem, HeadingStructure, LinkMetrics, MediaMetrics
 from app.utils import is_internal_link
 
+# ---------------------------------------------------------
+# CONSTANTS & SEO BENCHMARKS
+# ---------------------------------------------------------
+TITLE_MIN_LENGTH: Final[int] = 30
+TITLE_MAX_LENGTH: Final[int] = 60
 
-TITLE_MIN_LENGTH = 30
-TITLE_MAX_LENGTH = 60
+META_DESC_MIN_LENGTH: Final[int] = 70
+META_DESC_MAX_LENGTH: Final[int] = 160
 
-META_DESCRIPTION_MIN_LENGTH = 70
-META_DESCRIPTION_MAX_LENGTH = 160
+MIN_WORD_COUNT: Final[int] = 300
 
-MIN_WORD_COUNT = 150
+IGNORED_LINK_SCHEMES: Final[Tuple[str, ...]] = (
+    "#",
+    "mailto:",
+    "tel:",
+    "javascript:",
+    "data:",
+    "whatsapp:",
+)
 
-IGNORED_LINK_PREFIXES = ("#", "mailto:", "tel:", "javascript:")
-
-TEXT_EXCLUDED_PARENTS = {
+NON_CONTENT_TAGS: Final[Set[str]] = {
     "script",
     "style",
     "noscript",
     "svg",
     "template",
     "iframe",
+    "header",
+    "footer",
+    "nav",
 }
 
-
-WORD_PATTERN = re.compile(
+# Regex for Persian / Arabic / Latin word counting
+WORD_REGEX: Final[re.Pattern[str]] = re.compile(
     r"[\w\u0600-\u06FF]+(?:[-'’][\w\u0600-\u06FF]+)*",
     re.UNICODE,
 )
 
 
-def normalize_space(value: str) -> str:
-    return " ".join(value.split())
+class SEOAnalyzer:
+    """High-performance DOM analysis engine."""
 
+    def __init__(self, html: str, base_url: str) -> None:
+        self.raw_html: str = html
+        self.base_url: str = base_url
+        self.soup: BeautifulSoup = BeautifulSoup(html, "lxml")
 
-def get_attr(tag: Optional[Tag], attr: str, default: Optional[str] = None) -> Optional[str]:
-    if not tag:
-        return default
+    # -----------------------------------------------------
+    # Utility Helpers
+    # -----------------------------------------------------
+    @staticmethod
+    def _normalize_space(text: Optional[str]) -> str:
+        if not text:
+            return ""
+        return " ".join(text.split())
 
-    value = tag.get(attr)
+    @staticmethod
+    def _get_attr(tag: Optional[Tag], attr: str) -> Optional[str]:
+        if not tag:
+            return None
+        val = tag.get(attr)
+        if val is None:
+            return None
+        if isinstance(val, list):
+            return " ".join(str(item) for item in val).strip()
+        return str(val).strip()
 
-    if value is None:
-        return default
+    # -----------------------------------------------------
+    # Metadata Extractors
+    # -----------------------------------------------------
+    def extract_title(self) -> Optional[str]:
+        title_tag = self.soup.find("title")
+        if not title_tag:
+            return None
+        title_text = self._normalize_space(title_tag.get_text())
+        return title_text or None
 
-    if isinstance(value, list):
-        value = " ".join(str(item) for item in value)
-
-    return str(value).strip()
-
-
-def get_meta_content(soup: BeautifulSoup, name: str) -> Optional[str]:
-    tag = soup.find(
-        "meta",
-        attrs={"name": re.compile(rf"^{re.escape(name)}$", re.IGNORECASE)},
-    )
-
-    content = get_attr(tag, "content")
-
-    return content or None
-
-
-def get_title(soup: BeautifulSoup) -> Optional[str]:
-    title_tag = soup.find("title")
-
-    if not title_tag:
-        return None
-
-    title = normalize_space(title_tag.get_text(" ", strip=True))
-
-    return title or None
-
-
-def get_canonical_url(soup: BeautifulSoup, base_url: str) -> Optional[str]:
-    canonical_tag = soup.find(
-        "link",
-        attrs={
-            "rel": lambda value: value
-            and any(str(item).lower() == "canonical" for item in value)
-            if isinstance(value, list)
-            else str(value).lower() == "canonical"
-        },
-    )
-
-    href = get_attr(canonical_tag, "href")
-
-    if not href:
-        return None
-
-    return urljoin(base_url, href)
-
-
-def is_visible_text_node(node: NavigableString) -> bool:
-    if isinstance(node, Comment):
-        return False
-
-    parent = node.parent
-
-    if not parent:
-        return False
-
-    if parent.name and parent.name.lower() in TEXT_EXCLUDED_PARENTS:
-        return False
-
-    text = str(node).strip()
-
-    return bool(text)
-
-
-def get_text_content(soup: BeautifulSoup) -> str:
-    """
-    Extract visible textual content without mutating the original soup.
-
-    مهم:
-    این تابع نباید script/style را از soup اصلی حذف کند،
-    چون بعداً برای JSON-LD و سایر بررسی‌ها به آن‌ها نیاز داریم.
-    """
-    text_nodes = soup.find_all(string=True)
-    visible_texts = [str(node) for node in text_nodes if is_visible_text_node(node)]
-
-    return normalize_space(" ".join(visible_texts))
-
-
-def count_words(text: str) -> int:
-    return len(WORD_PATTERN.findall(text))
-
-
-def detect_wordpress(soup: BeautifulSoup, html: str) -> bool:
-    html_lower = html.lower()
-
-    generator_content = get_meta_content(soup, "generator") or ""
-    generator_content = generator_content.lower()
-
-    wordpress_signals = [
-        "wordpress" in generator_content,
-        "/wp-content/" in html_lower,
-        "/wp-includes/" in html_lower,
-        "wp-json" in html_lower,
-        "wp-emoji" in html_lower,
-        "wp-block-library" in html_lower,
-    ]
-
-    return any(wordpress_signals)
-
-
-def has_open_graph_metadata(soup: BeautifulSoup) -> bool:
-    return bool(
-        soup.find(
+    def extract_meta_content(self, name_or_prop: str, is_property: bool = False) -> Optional[str]:
+        attr_key = "property" if is_property else "name"
+        tag = self.soup.find(
             "meta",
-            attrs={"property": re.compile(r"^og:", re.IGNORECASE)},
+            attrs={attr_key: re.compile(rf"^{re.escape(name_or_prop)}$", re.IGNORECASE)},
         )
-    )
+        content = self._get_attr(tag, "content")
+        return self._normalize_space(content) or None
 
-
-def has_valid_json_ld(soup: BeautifulSoup) -> bool:
-    scripts = soup.find_all(
-        "script",
-        attrs={
-            "type": lambda value: value
-            and str(value).lower().strip() == "application/ld+json"
-        },
-    )
-
-    for script in scripts:
-        raw_json = script.string or script.get_text(strip=True)
-
-        if not raw_json:
-            continue
-
-        try:
-            json.loads(raw_json)
-            return True
-        except json.JSONDecodeError:
-            continue
-
-    return False
-
-
-def get_heading_counts(soup: BeautifulSoup) -> tuple[int, int]:
-    return len(soup.find_all("h1")), len(soup.find_all("h2"))
-
-
-def analyze_images(soup: BeautifulSoup) -> tuple[int, int]:
-    images = soup.find_all("img")
-    total_images = len(images)
-
-    images_without_alt = 0
-
-    for image in images:
-        alt = image.get("alt")
-
-        if alt is None or not str(alt).strip():
-            images_without_alt += 1
-
-    return total_images, images_without_alt
-
-
-def analyze_links(soup: BeautifulSoup, final_url: str) -> tuple[int, int]:
-    internal_links = 0
-    external_links = 0
-
-    seen_links: set[str] = set()
-
-    for anchor in soup.find_all("a", href=True):
-        href = anchor["href"].strip()
-
+    def extract_canonical(self) -> Optional[str]:
+        link_tag = self.soup.find(
+            "link",
+            attrs={
+                "rel": lambda val: (
+                    any(str(item).lower() == "canonical" for item in val)
+                    if isinstance(val, list)
+                    else str(val).lower() == "canonical"
+                )
+            },
+        )
+        href = self._get_attr(link_tag, "href")
         if not href:
-            continue
+            return None
+        return urljoin(self.base_url, href)
 
-        if href.lower().startswith(IGNORED_LINK_PREFIXES):
-            continue
+    # -----------------------------------------------------
+    # Structure & Content
+    # -----------------------------------------------------
+    def extract_headings(self) -> HeadingStructure:
+        h1_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h1")]
+        h2_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h2")]
+        h3_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h3")]
+        h4_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h4")]
+        h5_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h5")]
+        h6_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h6")]
 
-        absolute_url = urljoin(final_url, href)
-
-        if absolute_url in seen_links:
-            continue
-
-        seen_links.add(absolute_url)
-
-        if is_internal_link(absolute_url, final_url):
-            internal_links += 1
-        else:
-            external_links += 1
-
-    return internal_links, external_links
-
-
-def robots_contains_directive(robots_meta: Optional[str], directive: str) -> bool:
-    if not robots_meta:
-        return False
-
-    directives = {
-        item.strip().lower()
-        for item in robots_meta.split(",")
-        if item.strip()
-    }
-
-    return directive.lower() in directives
-
-
-def make_check(
-    *,
-    key: str,
-    label: str,
-    status: str,
-    value: Any = None,
-    message: str,
-    recommendation: Optional[str] = None,
-) -> CheckItem:
-    return CheckItem(
-        key=key,
-        label=label,
-        status=status,
-        value=value,
-        message=message,
-        recommendation=recommendation,
-    )
-
-
-def check_title(title: Optional[str]) -> CheckItem:
-    if not title:
-        return make_check(
-            key="title",
-            label="Title Tag",
-            status="error",
-            value=None,
-            message="The page does not contain a title tag.",
-            recommendation="Add a unique and descriptive title tag.",
+        return HeadingStructure(
+            h1_count=len(h1_tags),
+            h2_count=len(h2_tags),
+            h3_count=len(h3_tags),
+            h4_count=len(h4_tags),
+            h5_count=len(h5_tags),
+            h6_count=len(h6_tags),
+            h1_contents=h1_tags,
         )
 
-    title_length = len(title)
+    def extract_text_and_word_count(self) -> Tuple[str, int]:
+        # Shallow copy or selective traversal without mutating soup
+        visible_chunks: List[str] = []
+        for element in self.soup.find_all(string=True):
+            if isinstance(element, Comment):
+                continue
+            parent = element.parent
+            if parent and parent.name and parent.name.lower() in NON_CONTENT_TAGS:
+                continue
+            cleaned = str(element).strip()
+            if cleaned:
+                visible_chunks.append(cleaned)
 
-    if TITLE_MIN_LENGTH <= title_length <= TITLE_MAX_LENGTH:
-        return make_check(
-            key="title",
-            label="Title Tag Length",
-            status="success",
-            value=f"{title_length} characters",
-            message="The title length is within the recommended range.",
+        raw_text = " ".join(visible_chunks)
+        normalized_text = self._normalize_space(raw_text)
+        word_count = len(WORD_REGEX.findall(normalized_text))
+        return normalized_text, word_count
+
+    # -----------------------------------------------------
+    # Media & Links
+    # -----------------------------------------------------
+    def extract_media(self) -> MediaMetrics:
+        images = self.soup.find_all("img")
+        total = len(images)
+        missing_alt = 0
+        empty_alt = 0
+
+        for img in images:
+            alt = img.get("alt")
+            if alt is None:
+                missing_alt += 1
+            elif not str(alt).strip():
+                empty_alt += 1
+
+        return MediaMetrics(
+            total_images=total,
+            missing_alt=missing_alt,
+            empty_alt=empty_alt,
         )
 
-    return make_check(
-        key="title",
-        label="Title Tag Length",
-        status="warning",
-        value=f"{title_length} characters",
-        message=(
-            f"The title length is outside the recommended "
-            f"{TITLE_MIN_LENGTH}–{TITLE_MAX_LENGTH} character range."
-        ),
-        recommendation=(
-            f"Keep the title between {TITLE_MIN_LENGTH} and "
-            f"{TITLE_MAX_LENGTH} characters."
-        ),
-    )
+    def extract_links(self) -> LinkMetrics:
+        internal_count = 0
+        external_count = 0
+        nofollow_count = 0
+        unique_links: Set[str] = set()
 
+        for anchor in self.soup.find_all("a", href=True):
+            raw_href = anchor["href"].strip()
+            if not raw_href or raw_href.lower().startswith(IGNORED_LINK_SCHEMES):
+                continue
 
-def check_meta_description(meta_description: Optional[str]) -> CheckItem:
-    if not meta_description:
-        return make_check(
-            key="meta_description",
-            label="Meta Description",
-            status="warning",
-            value=None,
-            message="No meta description was found.",
-            recommendation=(
-                f"Add a compelling meta description between "
-                f"{META_DESCRIPTION_MIN_LENGTH} and "
-                f"{META_DESCRIPTION_MAX_LENGTH} characters."
-            ),
+            abs_url = urljoin(self.base_url, raw_href)
+            if abs_url in unique_links:
+                continue
+            unique_links.add(abs_url)
+
+            rel_list = anchor.get("rel", [])
+            if isinstance(rel_list, str):
+                rel_list = rel_list.split()
+            if "nofollow" in [r.lower() for r in rel_list]:
+                nofollow_count += 1
+
+            if is_internal_link(abs_url, self.base_url):
+                internal_count += 1
+            else:
+                external_count += 1
+
+        return LinkMetrics(
+            internal_links=internal_count,
+            external_links=external_count,
+            nofollow_links=nofollow_count,
+            total_unique_links=len(unique_links),
         )
 
-    meta_description_length = len(meta_description)
+    # -----------------------------------------------------
+    # Technical & Advanced Signals
+    # -----------------------------------------------------
+    def extract_social_graph(self) -> dict[str, bool]:
+        og_title = self.extract_meta_content("og:title", is_property=True)
+        og_desc = self.extract_meta_content("og:description", is_property=True)
+        og_image = self.extract_meta_content("og:image", is_property=True)
+        tw_card = self.extract_meta_content("twitter:card")
 
-    if META_DESCRIPTION_MIN_LENGTH <= meta_description_length <= META_DESCRIPTION_MAX_LENGTH:
-        return make_check(
-            key="meta_description",
-            label="Meta Description Length",
-            status="success",
-            value=f"{meta_description_length} characters",
-            message="The meta description length is optimized.",
+        return {
+            "has_open_graph": bool(og_title or og_desc or og_image),
+            "has_twitter_card": bool(tw_card),
+        }
+
+    def extract_json_ld_schemas(self) -> List[dict[str, Any]]:
+        schemas: List[dict[str, Any]] = []
+        script_tags = self.soup.find_all(
+            "script",
+            attrs={"type": lambda v: v and str(v).lower().strip() == "application/ld+json"},
         )
+        for script in script_tags:
+            content = script.string or script.get_text(strip=True)
+            if not content:
+                continue
+            try:
+                parsed = json.loads(content)
+                if isinstance(parsed, dict):
+                    schemas.append(parsed)
+                elif isinstance(parsed, list):
+                    schemas.extend([item for item in parsed if isinstance(item, dict)])
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return schemas
 
-    return make_check(
-        key="meta_description",
-        label="Meta Description Length",
-        status="warning",
-        value=f"{meta_description_length} characters",
-        message=(
-            f"The meta description length is outside the recommended "
-            f"{META_DESCRIPTION_MIN_LENGTH}–{META_DESCRIPTION_MAX_LENGTH} "
-            f"character range."
-        ),
-        recommendation=(
-            f"Keep the meta description between "
-            f"{META_DESCRIPTION_MIN_LENGTH} and "
-            f"{META_DESCRIPTION_MAX_LENGTH} characters."
-        ),
-    )
+    def detect_wordpress(self) -> bool:
+        html_lower = self.raw_html.lower()
+        generator = (self.extract_meta_content("generator") or "").lower()
 
+        signals = [
+            "wordpress" in generator,
+            "/wp-content/" in html_lower,
+            "/wp-includes/" in html_lower,
+            "wp-json" in html_lower,
+            "wp-emoji" in html_lower,
+            "wp-block-library" in html_lower,
+        ]
+        return any(signals)
 
-def check_h1_count(h1_count: int) -> CheckItem:
-    if h1_count == 1:
-        return make_check(
-            key="h1_count",
-            label="H1 Heading",
-            status="success",
-            value=h1_count,
-            message="Exactly one H1 heading was found.",
+    # -----------------------------------------------------
+    # Main Execution Method
+    # -----------------------------------------------------
+    def analyze(self) -> AuditReportData:
+        """Executes full DOM parsing and returns structured metrics."""
+        title = self.extract_title()
+        meta_description = self.extract_meta_content("description")
+        canonical = self.extract_canonical()
+        robots_meta = self.extract_meta_content("robots")
+
+        headings = self.extract_headings()
+        _, word_count = self.extract_text_and_word_count()
+        media = self.extract_media()
+        links = self.extract_links()
+        social = self.extract_social_graph()
+        schemas = self.extract_json_ld_schemas()
+        is_wp = self.detect_wordpress()
+
+        return AuditReportData(
+            title=title,
+            meta_description=meta_description,
+            canonical=canonical,
+            robots_meta=robots_meta,
+            headings=headings,
+            word_count=word_count,
+            media=media,
+            links=links,
+            has_open_graph=social["has_open_graph"],
+            has_twitter_card=social["has_twitter_card"],
+            has_structured_data=bool(schemas),
+            structured_data_types=[s.get("@type", "Unknown") for s in schemas if "@type" in s],
+            is_wordpress=is_wp,
         )
-
-    if h1_count == 0:
-        return make_check(
-            key="h1_count",
-            label="H1 Heading",
-            status="error",
-            value=h1_count,
-            message="No H1 heading was found.",
-            recommendation="Add exactly one descriptive H1 heading.",
-        )
-
-    return make_check(
-        key="h1_count",
-        label="H1 Heading",
-        status="warning",
-        value=h1_count,
-        message=f"{h1_count} H1 headings were found.",
-        recommendation="Use exactly one primary H1 heading per page.",
-    )
-
-
-def check_word_count(word_count: int) -> CheckItem:
-    if word_count < MIN_WORD_COUNT:
-        return make_check(
-            key="word_count",
-            label="Content Length",
-            status="warning",
-            value=f"{word_count} words",
-            message="The page has relatively thin textual content.",
-            recommendation="Add useful, original, and topic-focused content.",
-        )
-
-    return make_check(
-        key="word_count",
-        label="Content Length",
-        status="success",
-        value=f"{word_count} words",
-        message="The page contains a reasonable amount of textual content.",
-    )
-
-
-def check_image_alt(total_images: int, images_without_alt: int) -> CheckItem:
-    if total_images == 0:
-        return make_check(
-            key="image_alt",
-            label="Image Alt Attributes",
-            status="info",
-            value="No images found",
-            message="No images were detected on the page.",
-        )
-
-    if images_without_alt > 0:
-        return make_check(
-            key="image_alt",
-            label="Image Alt Attributes",
-            status="warning",
-            value=f"{images_without_alt} of {total_images} missing",
-            message="One or more images have missing or empty alt attributes.",
-            recommendation="Add descriptive alt text to meaningful images.",
-        )
-
-    return make_check(
-        key="image_alt",
-        label="Image Alt Attributes",
-        status="success",
-        value=f"{total_images} images checked",
-        message="All detected images include alt attributes.",
-    )
-
-
-def check_canonical(canonical: Optional[str]) -> CheckItem:
-    if not canonical:
-        return make_check(
-            key="canonical",
-            label="Canonical URL",
-            status="warning",
-            value=None,
-            message="No canonical URL was detected.",
-            recommendation="Add a self-referencing canonical link element.",
-        )
-
-    return make_check(
-        key="canonical",
-        label="Canonical URL",
-        status="success",
-        value=canonical,
-        message="A canonical URL was detected.",
-    )
-
-
-def check_robots_meta(robots_meta: Optional[str]) -> CheckItem:
-    if robots_contains_directive(robots_meta, "noindex"):
-        return make_check(
-            key="robots",
-            label="Robots Meta Tag",
-            status="error",
-            value=robots_meta,
-            message="The page contains a noindex directive.",
-            recommendation="Remove noindex if this page should appear in search results.",
-        )
-
-    return make_check(
-        key="robots",
-        label="Robots Meta Tag",
-        status="info",
-        value=robots_meta or "Not specified",
-        message="No noindex directive was detected.",
-    )
-
-
-def check_open_graph(has_open_graph: bool) -> CheckItem:
-    return make_check(
-        key="open_graph",
-        label="Open Graph Metadata",
-        status="success" if has_open_graph else "warning",
-        value=has_open_graph,
-        message=(
-            "Open Graph metadata was detected."
-            if has_open_graph
-            else "Open Graph metadata was not detected."
-        ),
-        recommendation=(
-            None
-            if has_open_graph
-            else "Add Open Graph tags to improve social media previews."
-        ),
-    )
-
-
-def check_structured_data(has_structured_data: bool) -> CheckItem:
-    return make_check(
-        key="structured_data",
-        label="Structured Data",
-        status="success" if has_structured_data else "warning",
-        value=has_structured_data,
-        message=(
-            "Valid JSON-LD structured data was detected."
-            if has_structured_data
-            else "No valid JSON-LD structured data was detected."
-        ),
-        recommendation=(
-            None
-            if has_structured_data
-            else "Add valid schema markup relevant to the page content."
-        ),
-    )
-
-
-def check_wordpress_detection(is_wordpress: bool) -> CheckItem:
-    return make_check(
-        key="wordpress_detection",
-        label="WordPress Detection",
-        status="info",
-        value=is_wordpress,
-        message=(
-            "WordPress indicators were detected."
-            if is_wordpress
-            else "No clear WordPress indicators were detected."
-        ),
-    )
-
-
-def build_checks(
-    *,
-    title: Optional[str],
-    meta_description: Optional[str],
-    h1_count: int,
-    word_count: int,
-    total_images: int,
-    images_without_alt: int,
-    canonical: Optional[str],
-    robots_meta: Optional[str],
-    has_open_graph: bool,
-    has_structured_data: bool,
-    is_wordpress: bool,
-) -> list[CheckItem]:
-    return [
-        check_title(title),
-        check_meta_description(meta_description),
-        check_h1_count(h1_count),
-        check_word_count(word_count),
-        check_image_alt(total_images, images_without_alt),
-        check_canonical(canonical),
-        check_robots_meta(robots_meta),
-        check_open_graph(has_open_graph),
-        check_structured_data(has_structured_data),
-        check_wordpress_detection(is_wordpress),
-    ]
-
-
-def analyze_url(url: str) -> AuditResponse:
-    fetch_result = fetch_html(url)
-
-    soup = BeautifulSoup(fetch_result.html, "lxml")
-
-    # ---------- Metadata ----------
-    title = get_title(soup)
-    meta_description = get_meta_content(soup, "description")
-    canonical = get_canonical_url(soup, fetch_result.final_url)
-    robots_meta = get_meta_content(soup, "robots")
-
-    # ---------- Content ----------
-    h1_count, h2_count = get_heading_counts(soup)
-    text_content = get_text_content(soup)
-    word_count = count_words(text_content)
-
-    # ---------- Images ----------
-    total_images, images_without_alt = analyze_images(soup)
-
-    # ---------- Links ----------
-    internal_links, external_links = analyze_links(soup, fetch_result.final_url)
-
-    # ---------- Social / Schema / CMS ----------
-    has_open_graph = has_open_graph_metadata(soup)
-    has_structured_data = has_valid_json_ld(soup)
-    is_wordpress = detect_wordpress(soup, fetch_result.html)
-
-    checks = build_checks(
-        title=title,
-        meta_description=meta_description,
-        h1_count=h1_count,
-        word_count=word_count,
-        total_images=total_images,
-        images_without_alt=images_without_alt,
-        canonical=canonical,
-        robots_meta=robots_meta,
-        has_open_graph=has_open_graph,
-        has_structured_data=has_structured_data,
-        is_wordpress=is_wordpress,
-    )
-
-    score = calculate_score(checks)
-
-    return AuditResponse(
-        url=url,
-        final_url=fetch_result.final_url,
-        score=score,
-        http_status_code=fetch_result.status_code,
-        response_time_ms=fetch_result.response_time_ms,
-        content_type=fetch_result.content_type,
-        title=title,
-        meta_description=meta_description,
-        canonical=canonical,
-        robots_meta=robots_meta,
-        h1_count=h1_count,
-        h2_count=h2_count,
-        word_count=word_count,
-        total_images=total_images,
-        images_without_alt=images_without_alt,
-        internal_links=internal_links,
-        external_links=external_links,
-        has_open_graph=has_open_graph,
-        has_structured_data=has_structured_data,
-        is_wordpress=is_wordpress,
-        checks=checks,
-    )
