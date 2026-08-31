@@ -1,54 +1,65 @@
 "use client";
 
 import { useState } from "react";
-import UrlForm from "@/components/UrlForm";
+import {
+  AlertCircle,
+  Layers,
+  RefreshCcw,
+  Sparkles,
+  Terminal,
+} from "lucide-react";
+
 import AuditDashboard from "@/components/AuditDashboard";
-import { AuditResponse } from "@/types/audit";
-import { AlertCircle, Terminal, Layers, Sparkles, RefreshCcw } from "lucide-react";
+import UrlForm from "@/components/UrlForm";
+import type { AuditResponse } from "@/types/audit";
 
 export default function Home() {
   const [auditResult, setAuditResult] = useState<AuditResponse | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleAuditStart = () => {
     setAuditResult(null);
+    setError(null);
     setIsLoading(true);
-    setError("");
   };
 
   const handleAuditComplete = (result: AuditResponse) => {
     setAuditResult(result);
+    setError(null);
     setIsLoading(false);
   };
 
-  const handleError = (errorMessage: string) => {
-    setError(errorMessage);
+  const handleError = (message: string) => {
+    setAuditResult(null);
+    setError(message);
     setIsLoading(false);
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-background via-background to-secondary/20 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-5xl mx-auto space-y-10">
-        
-        {/* Header & Hero Section */}
-        <header className="text-center space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>FastAPI + Next.js Technical Audit Engine</span>
+    <main
+      dir="rtl"
+      className="min-h-screen bg-gradient-to-b from-background via-background to-secondary/20 px-4 py-12 sm:px-6 lg:px-8"
+    >
+      <div className="mx-auto max-w-5xl space-y-10">
+        <header className="space-y-4 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <Sparkles aria-hidden="true" className="size-3.5" />
+            <span dir="ltr">FastAPI + Next.js Technical Audit Engine</span>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-foreground">
-            WP SEO <span className="text-primary">Inspector</span>
+          <h1 className="text-4xl font-black tracking-tight text-foreground sm:text-5xl">
+            <span dir="ltr">
+              WP SEO <span className="text-primary">Inspector</span>
+            </span>
           </h1>
 
-          <p className="text-lg sm:text-xl text-muted-foreground font-medium max-w-2xl mx-auto">
-            تحلیلگر عمیق سئو تکنیکال، ساختار داده و اسکیماهای استاندارد وردپرس
+          <p className="mx-auto max-w-2xl text-lg font-medium text-muted-foreground sm:text-xl">
+            تحلیل عمیق سئوی تکنیکال، ساختار داده و اسکیماهای استاندارد وردپرس
           </p>
         </header>
 
-        {/* Input Form */}
-        <section className="relative z-10">
+        <section aria-label="فرم شروع تحلیل" className="relative z-10">
           <UrlForm
             onAuditStart={handleAuditStart}
             onAuditComplete={handleAuditComplete}
@@ -56,91 +67,117 @@ export default function Home() {
           />
         </section>
 
-        {/* Loading Skeleton */}
-        {isLoading && (
-          <section
-            aria-live="polite"
-            className="p-8 rounded-2xl border bg-card text-card-foreground shadow-sm max-w-2xl mx-auto text-center space-y-4 animate-pulse"
-          >
-            <div className="flex justify-center">
-              <div className="p-3 bg-primary/10 rounded-full text-primary animate-spin">
-                <RefreshCcw className="w-6 h-6" />
+        <div aria-atomic="true" aria-live="polite">
+          {isLoading && (
+            <section
+              aria-busy="true"
+              aria-label="تحلیل در حال اجرا"
+              className="mx-auto max-w-2xl space-y-4 rounded-2xl border bg-card p-8 text-center text-card-foreground shadow-sm"
+            >
+              <div className="flex justify-center">
+                <div className="rounded-full bg-primary/10 p-3 text-primary">
+                  <RefreshCcw
+                    aria-hidden="true"
+                    className="size-6 animate-spin motion-reduce:animate-none"
+                  />
+                </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-base font-bold text-foreground">
-                در حال اجرای تحلیل جامع و واکشی سورس وردپرس...
-              </p>
-              <p className="text-xs text-muted-foreground">
-                بررسی ربات‌ها، تگ‌های کنونیکال، ریسپانس هدرها، متاتگ‌ها و گراف اسکیما (معمولاً ۵ تا ۱۵ ثانیه)
-              </p>
-            </div>
-            <div className="grid grid-cols-3 gap-3 pt-2">
-              <div className="h-10 bg-muted rounded-lg"></div>
-              <div className="h-10 bg-muted rounded-lg"></div>
-              <div className="h-10 bg-muted rounded-lg"></div>
-            </div>
-          </section>
-        )}
 
-        {/* Error Alert Box */}
-        {error && !isLoading && (
-          <section
-            role="alert"
-            className="p-5 rounded-2xl bg-destructive/10 border border-destructive/30 text-destructive max-w-3xl mx-auto shadow-sm"
-          >
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-              <div className="space-y-1 text-sm text-start">
-                <p className="font-bold">خطا در پردازش و ارتباط با سرور تحلیل:</p>
-                <p className="text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                  {error}
+              <div className="space-y-2">
+                <p className="text-base font-bold text-foreground">
+                  در حال واکشی صفحه و اجرای تحلیل جامع...
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  بررسی وضعیت HTTP، متاتگ‌ها، هدینگ‌ها، کنونیکال، تصاویر،
+                  لینک‌ها و داده‌های ساختاریافته؛ معمولاً ۵ تا ۱۵ ثانیه
                 </p>
               </div>
-            </div>
-          </section>
-        )}
 
-        {/* Audit Dashboard Output */}
+              <div
+                aria-hidden="true"
+                className="grid grid-cols-3 gap-3 pt-2"
+              >
+                <div className="h-10 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />
+                <div className="h-10 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />
+                <div className="h-10 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />
+              </div>
+            </section>
+          )}
+
+          {error && !isLoading && (
+            <section
+              role="alert"
+              className="mx-auto max-w-3xl rounded-2xl border border-destructive/30 bg-destructive/10 p-5 shadow-sm"
+            >
+              <div className="flex items-start gap-3">
+                <AlertCircle
+                  aria-hidden="true"
+                  className="mt-0.5 size-5 shrink-0 text-destructive"
+                />
+
+                <div className="space-y-1 text-start text-sm">
+                  <p className="font-bold text-destructive">
+                    خطا در اجرای تحلیل
+                  </p>
+                  <p className="whitespace-pre-wrap break-words leading-relaxed text-foreground">
+                    {error}
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+
         {auditResult && !isLoading && (
-          <section className="pt-4">
+          <section aria-label="نتیجه تحلیل سئو" className="pt-4">
             <AuditDashboard result={auditResult} />
           </section>
         )}
 
-        {/* Empty State / Feature Grid */}
         {!auditResult && !isLoading && !error && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-10 border-t border-border/50">
-            <div className="p-4 rounded-xl border bg-card/50 text-start space-y-2">
-              <div className="p-2 w-fit rounded-lg bg-blue-500/10 text-blue-500">
-                <Terminal className="w-4 h-4" />
+          <section
+            aria-label="قابلیت‌های سامانه"
+            className="grid grid-cols-1 gap-4 border-t border-border/50 pt-10 md:grid-cols-3"
+          >
+            <article className="space-y-2 rounded-xl border bg-card/50 p-4 text-start">
+              <div className="w-fit rounded-lg bg-blue-500/10 p-2 text-blue-500">
+                <Terminal aria-hidden="true" className="size-4" />
               </div>
-              <h3 className="text-sm font-bold text-foreground">تحلیل سئو تکنیکال</h3>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                ارزیابی کامل وضعیت کدهای پاسخ، ریدایرکت‌ها، متاتگ‌های ایندکس و تگ‌های کنونیکال.
+              <h2 className="text-sm font-bold text-foreground">
+                تحلیل سئوی تکنیکال
+              </h2>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                ارزیابی وضعیت HTTP، ریدایرکت‌ها، متاتگ‌های ایندکس و تگ
+                کنونیکال.
               </p>
-            </div>
+            </article>
 
-            <div className="p-4 rounded-xl border bg-card/50 text-start space-y-2">
-              <div className="p-2 w-fit rounded-lg bg-emerald-500/10 text-emerald-500">
-                <Layers className="w-4 h-4" />
+            <article className="space-y-2 rounded-xl border bg-card/50 p-4 text-start">
+              <div className="w-fit rounded-lg bg-emerald-500/10 p-2 text-emerald-500">
+                <Layers aria-hidden="true" className="size-4" />
               </div>
-              <h3 className="text-sm font-bold text-foreground">اعتبارسنجی اسکیما (JSON-LD)</h3>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                بررسی گراف موجودیت‌ها شامل Organization ،Article و BreadcrumbList.
+              <h2 className="text-sm font-bold text-foreground">
+                بررسی داده‌های ساختاریافته
+              </h2>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                شناسایی JSON-LD و انواعی مانند Organization، Article و
+                BreadcrumbList.
               </p>
-            </div>
+            </article>
 
-            <div className="p-4 rounded-xl border bg-card/50 text-start space-y-2">
-              <div className="p-2 w-fit rounded-lg bg-amber-500/10 text-amber-500">
-                <Sparkles className="w-4 h-4" />
+            <article className="space-y-2 rounded-xl border bg-card/50 p-4 text-start">
+              <div className="w-fit rounded-lg bg-amber-500/10 p-2 text-amber-500">
+                <Sparkles aria-hidden="true" className="size-4" />
               </div>
-              <h3 className="text-sm font-bold text-foreground">بهینه‌سازی اختصاصی WP</h3>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                شناسایی باگ‌های افزونه‌های Yoast، RankMath و فایل‌های استاتیک بدون کش.
+              <h2 className="text-sm font-bold text-foreground">
+                تشخیص وردپرس
+              </h2>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                تشخیص نشانه‌های وردپرس و گزارش سیگنال‌های فنی قابل استخراج از
+                صفحه.
               </p>
-            </div>
-          </div>
+            </article>
+          </section>
         )}
       </div>
     </main>
