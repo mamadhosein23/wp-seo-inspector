@@ -1,171 +1,187 @@
 """
 Web SEO Inspector — Scoring Engine
 ====================================
-
-موتور امتیازدهی مبتنی بر مدل «Deductive Weighting».
-امتیاز پایه = ۱۰۰، و هر مشکل به‌تناسب شدت از آن کم می‌شود.
-
-Why deductive?
-- مقیاس ۰ تا ۱۰۰ روی کل سایت: شفاف و قابل تفسیر برای مشتری/داشبورد.
-- وزن‌ها جداگانه قابل تنظیم‌اند (fine-tuning بدون دست‌زدن به منطق).
-- هر جریمه دارای `reason` است → قابل ممیزی و نمایش در UI.
-
-Design goals:
-- Pure / side-effect free → تست‌پذیری آسان (unit-test بدون I/O).
-- Deterministic → همان ورودی، همان خروجی.
-- Extensible → افزودن rule = یک ورودی در CHECK_RULES.
+موتور امتیازدهی استاندارد مبتنی بر Deductive Weighting با اعمال سقف دسته‌ای (Category Capping).
+امتیاز پایه = ۱۰۰ و کسر امتیازها در چارچوب حداکثر تأثیر هر دسته انجام می‌شود.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Dict, List
 
-from app.schemas import CheckItem
+from app.schemas import CheckCategory, CheckItem
 
 
 # ---------------------------------------------------------------------------
-# ۱) سطوح شدت و وزن‌های متناظر
+# ۱) سطوح شدت و سقف جریمه دسته‌بندی‌ها
 # ---------------------------------------------------------------------------
 
 class Severity(IntEnum):
-    """شدت دلخواهِ هر مشکل؛ وزنِ جریمه در CHECK_RULES تعریف می‌شود."""
+    """سطح جریمه پیش‌فرض به ازای هر خطا."""
+    CRITICAL = 30   # خطای مسدودکننده (e.g. 5xx, noindex)
+    HIGH     = 20   # خطای ساختاری حاد (e.g. missing title/h1)
+    MEDIUM   = 10   # خطای سئو تکنیکال سطح دو (e.g. canonical, meta desc)
+    LOW      = 5    # بهینه‌سازی‌های جزئی (e.g. alt, og tags)
 
-    CRITICAL = 30   # سایت را عملاً از ایندکس خارج می‌کند (e.g. noindex / 5xx)
-    HIGH     = 20   # مشکل ساختار یا ایندکس‌پذیری جدی (e.g. missing H1/title)
-    MEDIUM   = 10   # بهینه‌سازی‌های مهمِ ثانویه (canonical, desc …)
-    LOW      = 5    # بهبودهای ظریف (alt, OG, schema …)
 
-
-# ---------------------------------------------------------------------------
-# ۲) ثبت‌قوانین (Registry)؛ منبع حقیقتِ امتیازدهی
-# ---------------------------------------------------------------------------
-
-# key  →  وزنی که هنگام عدم‌موفقیتِ آن چک اعمال می‌شود
-CHECK_RULES: Dict[str, int] = {
-    # --- Indexability (Critical) ---
-    "http_error":        Severity.CRITICAL,   # 4xx/5xx
-    "robots_noindex":    Severity.CRITICAL,   # noindex در meta/headers
-
-    # --- Core structure (High) ---
-    "h1_missing":        Severity.HIGH,
-    "h1_multiple":       Severity.HIGH,
-    "title_missing":     Severity.HIGH,
-
-    # --- Secondary meta (Medium) ---
-    "meta_desc_missing": Severity.MEDIUM,
-    "canonical_missing": Severity.MEDIUM,
-    "og_tags_missing":   Severity.MEDIUM,
-
-    # --- Refinements (Low) ---
-    "title_length":      Severity.LOW,
-    "meta_desc_length":  Severity.LOW,
-    "images_without_alt": Severity.LOW,
-    "schema_missing":    Severity.LOW,
+# سقف مجاز کسر امتیاز به تفکیک دسته‌بندی مطابق جدول README
+CATEGORY_MAX_IMPACT: dict[CheckCategory, int] = {
+    "indexability":  40,
+    "structure":     20,
+    "metadata":      25,
+    "accessibility": 15,
+    "social":        10,
 }
 
 
 # ---------------------------------------------------------------------------
-# ۳) ساختار خروجیِ امتیاز (برای داشبورد و تست)
+# ۲) ثبت قوانین پیش‌فرض (Registry)
 # ---------------------------------------------------------------------------
 
-@dataclass
+CHECK_RULES: dict[str, int] = {
+    # --- Indexability (Max 40) ---
+    "http_error":         Severity.CRITICAL,
+    "robots_noindex":     Severity.CRITICAL,
+    "status_code_failed": Severity.HIGH,
+
+    # --- Structure (Max 20) ---
+    "h1_missing":         Severity.HIGH,
+    "h1_multiple":        Severity.MEDIUM,
+    "heading_hierarchy":  Severity.LOW,
+
+    # --- Metadata (Max 25) ---
+    "title_missing":      Severity.HIGH,
+    "title_length":       Severity.LOW,
+    "meta_desc_missing":  Severity.MEDIUM,
+    "meta_desc_length":   Severity.LOW,
+    "canonical_missing":  Severity.MEDIUM,
+
+    # --- Accessibility (Max 15) ---
+    "images_without_alt": Severity.LOW,
+    "link_descriptors":   Severity.LOW,
+
+    # --- Social Graph (Max 10) ---
+    "og_tags_missing":    Severity.LOW,
+    "twitter_missing":    Severity.LOW,
+    "schema_missing":     Severity.LOW,
+}
+
+
+# ---------------------------------------------------------------------------
+# ۳) مدل‌های خروجی و گزارش
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
 class PenaltyBreakdown:
-    """شکستِ دقیقِ جریمه‌ها؛ خروجیِ اصلی همان scan کردن."""
     key: str
     label: str
+    category: CheckCategory
     message: str
-    severity: int            # شدت عددی (برای رنگ‌بندی UI)
-    applied_penalty: int     # جریمه‌ای که واقعاً اعمال شد
-    rule_penalty: int        # جریمه پیش‌فرض در CHECK_RULES
+    severity: int
+    applied_penalty: int
+    rule_penalty: int
 
 
-@dataclass
+@dataclass(slots=True)
 class ScoreReport:
-    """گزارش کامل امتیازدهی؛ چیزی که به Endpoint برمی‌گردد."""
     total_score: int
     max_score: int = 100
     total_penalty: int = 0
     items_checked: int = 0
     issues_found: int = 0
-    penalties: List[PenaltyBreakdown] = field(default_factory=list)
+    category_penalties: dict[CheckCategory, int] = field(default_factory=dict)
+    penalties: list[PenaltyBreakdown] = field(default_factory=list)
 
     @property
     def percent(self) -> float:
-        """درصد امتیاز نرمال‌شده — برای نمودارها."""
         if self.max_score <= 0:
             return 0.0
         return round((self.total_score / self.max_score) * 100, 2)
 
 
 # ---------------------------------------------------------------------------
-# ۴) موتور محاسبه
+# ۴) موتور محاسبه با Group Capping
 # ---------------------------------------------------------------------------
 
-def calculate_seo_score(checks: List[CheckItem]) -> ScoreReport:
+def calculate_seo_score(checks: list[CheckItem]) -> ScoreReport:
     """
-    محاسبه امتیاز نهایی و شکستِ جریمه‌ها بر اساس چک‌های analyzer.
-
-    Rules of the engine:
-      • وضعیت `success` همیشه بی‌جریمه است.
-      • اگر `check.penalty` به‌صورت داینامیک توسط analyzer تنظیم شده باشد،
-        بر وزنِ پیش‌فرض اولویت دارد (وضعیت‌های «شدیدتر از حد»).
-      • امتیاز در بازه [0, 100] clampe می‌شود.
-      • چک‌های ناشناخته (خارج از CHECK_RULES) نادیده گرفته می‌شوند،
-        نه اینکه سقوط کنند (fail-open، نه fail-closed).
+    محاسبه نمره کل با اعمال جریمه‌های تفکیک‌شده و محدودسازی بر اساس سقف هر Category.
     """
-    report = ScoreReport(total_score=100)
+    raw_category_penalties: dict[CheckCategory, int] = {
+        cat: 0 for cat in CATEGORY_MAX_IMPACT
+    }
+    penalties_list: list[PenaltyBreakdown] = []
+    items_checked = len(checks)
+    issues_found = 0
 
     for check in checks:
-        report.items_checked += 1
-
-        # جریمه فقط وقتی است که مشکل واقعاً وجود دارد
-        if check.status == "success" or check.key not in CHECK_RULES:
+        # آیتم‌های موفق یا صرفاً اطلاع‌رسانی جریمه ندارند
+        if check.status in ("success", "info"):
             continue
 
-        # شدتِ مشکل برای UI
-        severity = CHECK_RULES[check.key]
+        base_penalty = CHECK_RULES.get(check.key, Severity.LOW)
 
-        # اولویت: جریمه داینامیک analyzer > جریمه پیش‌فرض rule
-        applied = check.penalty if check.penalty and check.penalty > 0 else severity
+        # اگر Analyzer جریمه اختصاصی داده باشد اولویت دارد؛ در غیر اینصورت وضعیت warning تخفیف ۵۰٪ می‌گیرد
+        if check.penalty > 0:
+            applied = check.penalty
+        elif check.status == "warning":
+            applied = max(1, base_penalty // 2)
+        else:
+            applied = base_penalty
 
-        # در صورت نیاز، جریمه داینامیک را به Severity مقبول clamp کن
         applied = max(1, min(Severity.CRITICAL, applied))
 
-        # اعمال + ثبت
-        report.total_penalty += applied
-        report.issues_found += 1
-        report.total_score -= applied
+        category = check.category
+        if category in raw_category_penalties:
+            raw_category_penalties[category] += applied
 
-        report.penalties.append(
+        issues_found += 1
+        penalties_list.append(
             PenaltyBreakdown(
                 key=check.key,
                 label=check.label,
+                category=category,
                 message=check.message,
-                severity=severity,
+                severity=base_penalty,
                 applied_penalty=applied,
-                rule_penalty=severity,
+                rule_penalty=base_penalty,
             )
         )
 
-    # Clamp به بازه قانونی
-    report.total_score = max(0, min(report.max_score, report.total_score))
+    # اعمال سقف مجاز جریمه روی هر دسته (Capping)
+    final_category_penalties: dict[CheckCategory, int] = {}
+    total_deductions = 0
 
-    return report
+    for cat, raw_pen in raw_category_penalties.items():
+        max_allowed = CATEGORY_MAX_IMPACT[cat]
+        effective_penalty = min(raw_pen, max_allowed)
+        final_category_penalties[cat] = effective_penalty
+        total_deductions += effective_penalty
+
+    final_score = max(0, min(100, 100 - total_deductions))
+
+    return ScoreReport(
+        total_score=final_score,
+        total_penalty=total_deductions,
+        items_checked=items_checked,
+        issues_found=issues_found,
+        category_penalties=final_category_penalties,
+        penalties=penalties_list,
+    )
 
 
 # ---------------------------------------------------------------------------
-# ۵) APIهای کمکی برای حلقه اصلی (admin / tests)
+# ۵) توابع کمکی
 # ---------------------------------------------------------------------------
 
-def score_only(checks: List[CheckItem]) -> int:
-    """فقط عدد امتیاز را برمی‌گرداند — برای ستون‌های کوتاه UI/جداول."""
+def score_only(checks: list[CheckItem]) -> int:
+    """محاسبه سریع صرفاً مقدار عددی نمره نهایی."""
     return calculate_seo_score(checks).total_score
 
 
-def summarize(checks: List[CheckItem]) -> dict:
-    """خلاصه JSON-friendly برای لاگ یا تست سریع."""
+def summarize(checks: list[CheckItem]) -> dict[str, int]:
+    """خلاصه تجمیعی برای گزارش‌گیری سریع یا لاگ."""
     report = calculate_seo_score(checks)
     return {
         "score": report.total_score,
