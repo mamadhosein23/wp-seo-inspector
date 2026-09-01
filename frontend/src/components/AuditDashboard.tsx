@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useId, memo } from "react";
+import React, { useState, useMemo, useId, memo, useEffect, useRef } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -101,19 +101,18 @@ const badgeVariants = cva(
 // گیج امتیاز حلقه‌ای داینامیک
 const ScoreGauge = memo(function ScoreGauge({ score }: { score: number }) {
   const gradientId = useId();
-  const safeScore = Math.max(0, Math.min(100, Math.round(score)));
+  const safeScore = useMemo(() => Math.max(0, Math.min(100, Math.round(score))), [score]);
   const size = 130;
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - safeScore / 100);
 
-  const strokeColor =
-    safeScore >= 85
-      ? "hsl(var(--success))"
-      : safeScore >= 50
-      ? "hsl(var(--warning))"
-      : "hsl(var(--destructive))";
+  const strokeColor = useMemo(() => {
+    if (safeScore >= 85) return "hsl(var(--success, 142 71% 45%))";
+    if (safeScore >= 50) return "hsl(var(--warning, 38 92% 50%))";
+    return "hsl(var(--destructive, 0 84% 60%))";
+  }, [safeScore]);
 
   return (
     <div
@@ -193,7 +192,7 @@ const SummaryMetrics = memo(function SummaryMetrics({
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-muted-foreground">{label}</span>
-              <Icon className={cn("size-4.5", textClass)} />
+              <Icon className={cn("size-4", textClass)} />
             </div>
             <div className="mt-2 flex items-baseline gap-1">
               <span className="text-2xl font-black tabular-nums text-foreground">
@@ -212,8 +211,17 @@ const SummaryMetrics = memo(function SummaryMetrics({
 const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const contentId = useId();
+
   const meta = STATUS_CONFIG[check.status];
   const Icon = meta.icon;
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
 
   const handleCopy = async () => {
     try {
@@ -224,7 +232,8 @@ const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
       }`;
       await navigator.clipboard.writeText(content);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       // نادیده‌گرفتن خطای فاقد دسترسی کلیپ‌بورد
     }
@@ -273,6 +282,8 @@ const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
           <div className="mt-3">
             <button
               type="button"
+              aria-expanded={isOpen}
+              aria-controls={contentId}
               onClick={() => setIsOpen((prev) => !prev)}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline cursor-pointer"
             >
@@ -281,7 +292,10 @@ const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
             </button>
 
             {isOpen && (
-              <div className="mt-2.5 p-3.5 rounded-lg bg-secondary/50 border border-border text-xs leading-relaxed text-foreground">
+              <div
+                id={contentId}
+                className="mt-2.5 p-3.5 rounded-lg bg-secondary/50 border border-border text-xs leading-relaxed text-foreground"
+              >
                 <span className="font-bold block mb-1">اقدام پیشنهادی:</span>
                 {check.recommendation}
               </div>
@@ -321,13 +335,15 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
 
   const counts = useMemo(() => {
     const acc: Record<CheckStatus, number> = { fail: 0, warning: 0, info: 0, pass: 0 };
+    if (!result?.checks) return acc;
     for (const c of result.checks) {
       if (acc[c.status] !== undefined) acc[c.status] += 1;
     }
     return acc;
-  }, [result.checks]);
+  }, [result?.checks]);
 
   const filteredChecks = useMemo(() => {
+    if (!result?.checks) return [];
     return result.checks
       .filter((check) => {
         const matchesStatus = filterStatus === "all" || check.status === filterStatus;
@@ -336,7 +352,7 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
           query === "" ||
           check.name.toLowerCase().includes(query) ||
           check.message.toLowerCase().includes(query) ||
-          (check.recommendation && check.recommendation.toLowerCase().includes(query));
+          Boolean(check.recommendation && check.recommendation.toLowerCase().includes(query));
 
         return matchesStatus && matchesSearch;
       })
@@ -346,7 +362,7 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
         }
         return a.name.localeCompare(b.name, "fa");
       });
-  }, [result.checks, filterStatus, searchQuery, sortOrder]);
+  }, [result?.checks, filterStatus, searchQuery, sortOrder]);
 
   const handleExportJSON = () => {
     const blob = new Blob([JSON.stringify(result, null, 2)], {
@@ -356,11 +372,13 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
     const link = document.createElement("a");
     link.href = url;
     link.download = `audit-report-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  if (!result.checks || result.checks.length === 0) {
+  if (!result?.checks || result.checks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl border border-dashed border-border bg-card">
         <Layers className="size-12 text-muted-foreground/50 mb-4 animate-pulse" />
@@ -436,7 +454,7 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
             onClick={() =>
               setSortOrder((prev) => (prev === "severity" ? "alphabet" : "severity"))
             }
-            className="btn-outline !py-1.5 !px-3 !text-xs !rounded-lg"
+            className="inline-flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-medium rounded-lg border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
           >
             <ArrowUpDown className="size-3.5" />
             <span>{sortOrder === "severity" ? "شدت خطا" : "الفبا"}</span>
@@ -445,7 +463,7 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
           <button
             type="button"
             onClick={handleExportJSON}
-            className="btn-primary !py-1.5 !px-3 !text-xs !rounded-lg"
+            className="inline-flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
             title="دانلود کل خروجی JSON"
           >
             <Download className="size-3.5" />
