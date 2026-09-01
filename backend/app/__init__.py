@@ -3,7 +3,7 @@ WP SEO Inspector - High-Performance Technical SEO Audit Engine.
 
 A specialized auditing backend designed to dissect web pages, parse DOM trees,
 and evaluate technical SEO health via heuristic deductive scoring.
-"""""""""
+""""""""
 
 from typing import Final, Tuple
 import logging
