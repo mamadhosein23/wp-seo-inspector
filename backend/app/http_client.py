@@ -6,6 +6,7 @@ streaming payload limits, and latency profiling.
 """
 
 from __future__ import annotations
+
 import time
 from dataclasses import dataclass
 from typing import Final, List, Optional
