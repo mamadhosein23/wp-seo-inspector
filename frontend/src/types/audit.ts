@@ -1,6 +1,5 @@
 export const CHECK_STATUSES = ["success", "warning", "error", "info"] as const;
 export type CheckStatus = (typeof CHECK_STATUSES)[number];
-
 export const CHECK_CATEGORIES = [
   "technical",
   "content",
