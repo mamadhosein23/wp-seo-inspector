@@ -10,6 +10,7 @@ export const CHECK_CATEGORIES = [
   "schema",
   "security",
 ] as const;
+
 export type CheckCategory = (typeof CHECK_CATEGORIES)[number];
 
 export type Nullable<T> = T | null;
