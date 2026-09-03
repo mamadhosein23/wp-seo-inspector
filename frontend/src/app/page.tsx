@@ -8,6 +8,7 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react";
+
 "use client";
 
 import { useState, useCallback } from "react";
