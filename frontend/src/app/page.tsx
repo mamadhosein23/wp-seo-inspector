@@ -1,5 +1,4 @@
 "use client";
-
 import { useState } from "react";
 import {
   AlertCircle,
@@ -8,9 +7,7 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react";
-
 "use client";
-
 import { useState, useCallback } from "react";
 import {
   AlertCircle,
@@ -19,7 +16,6 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react";
-
 import AuditDashboard from "@/components/AuditDashboard";
 import UrlForm from "@/components/UrlForm";
 import type { AuditResponse } from "@/types/audit";
