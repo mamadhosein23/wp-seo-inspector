@@ -1,5 +1,4 @@
-"""
-WP SEO Inspector - Hardened Async HTTP Crawler.
+"""WP SEO Inspector - Hardened Async HTTP Crawler.
 
 Handles secure fetching, SSRF mitigation, DNS pinning/rebinding defense,
 streaming payload limits, and latency profiling.
@@ -9,8 +8,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Final, List, Optional
-from urllib.parse import urlparse
+from typing import Final
 
 import httpx
 
@@ -53,11 +51,11 @@ class FetchResult:
     content_type: str
     html: str
     response_time_ms: float
-    redirect_history: List[str]
+    redirect_history: list[str]
 
 
 class SafeAsyncCrawler:
-    """SSRF-hardened async crawler with streaming chunk protection."""
+    """SSRF-hardened async crawler with persistent connection pooling and streaming chunk protection."""
 
     def __init__(
         self,
@@ -66,8 +64,32 @@ class SafeAsyncCrawler:
         max_redirects: int = MAX_REDIRECTS,
     ) -> None:
         self.max_payload_size = max_payload_size
-        self.timeout = httpx.Timeout(timeout, connect=5.0, read=timeout, write=5.0)
         self.max_redirects = max_redirects
+        self.timeout = httpx.Timeout(timeout, connect=5.0, read=timeout, write=5.0)
+        self.transport = DNSRebindingTransport()
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                transport=self.transport,
+                timeout=self.timeout,
+                headers=DEFAULT_HEADERS,
+                follow_redirects=False,
+                verify=True,
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """Closes the underlying HTTP client session."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+
+    async def __aenter__(self) -> SafeAsyncCrawler:
+        return self
+
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
+        await self.close()
 
     async def fetch(self, raw_url: str) -> FetchResult:
         """
@@ -76,82 +98,82 @@ class SafeAsyncCrawler:
         and streams content to cap memory overhead.
         """
         current_url = validate_target_url(raw_url)
-        redirect_chain: List[str] = []
+        redirect_chain: list[str] = []
         hops = 0
 
+        client = self._get_client()
         start_time = time.perf_counter()
 
-        # Custom transport to pin DNS resolution securely without breaking TLS SNI
-        transport = DNSRebindingTransport()
+        while hops <= self.max_redirects:
+            validate_target_url(current_url)
 
-        async with httpx.AsyncClient(
-            transport=transport,
-            timeout=self.timeout,
-            headers=DEFAULT_HEADERS,
-            follow_redirects=False,
-            verify=True,
-        ) as client:
-            while hops <= self.max_redirects:
-                # Pre-flight check on destination URL prior to connection
-                validate_target_url(current_url)
+            try:
+                request = client.build_request("GET", current_url)
+                response = await client.send(request, stream=True)
+            except httpx.RequestError as exc:
+                raise InvalidTargetURLError(f"Connection failed to {current_url}: {exc}") from exc
 
-                try:
-                    request = client.build_request("GET", current_url)
-                    response = await client.send(request, stream=True)
-                except httpx.RequestError as exc:
-                    raise InvalidTargetURLError(f"Connection failed to {current_url}: {exc}") from exc
+            # Manually trace redirects to validate intermediate IPs against SSRF
+            if response.is_redirect:
+                redirect_chain.append(current_url)
+                location = response.headers.get("Location")
+                await response.aclose()
 
-                # Check for HTTP redirects manually to validate destination IPs on each hop
-                if response.is_redirect:
-                    redirect_chain.append(current_url)
-                    location = response.headers.get("Location")
-                    if not location:
-                        raise InvalidTargetURLError("Redirect response missing 'Location' header.")
+                if not location:
+                    raise InvalidTargetURLError("Redirect response missing 'Location' header.")
 
-                    # Resolve relative redirect paths
-                    current_url = str(response.url.join(location))
+                current_url = str(response.url.join(location))
+                hops += 1
+                continue
+
+            # Fail-fast on Content-Length header before consuming stream
+            content_length = response.headers.get("Content-Length")
+            if content_length and content_length.isdigit():
+                if int(content_length) > self.max_payload_size:
                     await response.aclose()
-                    hops += 1
-                    continue
+                    raise PayloadTooLargeError(
+                        f"Response header exceeded {self.max_payload_size // (1024 * 1024)}MB cap."
+                    )
 
-                # Stream and enforce payload caps strictly
-                content_type = response.headers.get("Content-Type", "").lower()
-                body_chunks: List[bytes] = []
-                bytes_received = 0
+            content_type = response.headers.get("Content-Type", "").lower()
+            body_chunks: list[bytes] = []
+            bytes_received = 0
 
-                try:
-                    async for chunk in response.aiter_bytes():
-                        bytes_received += len(chunk)
-                        if bytes_received > self.max_payload_size:
-                            raise PayloadTooLargeError(
-                                f"Response exceeded {self.max_payload_size // (1024 * 1024)}MB cap."
-                            )
-                        body_chunks.append(chunk)
-                finally:
-                    await response.aclose()
+            try:
+                async for chunk in response.aiter_bytes():
+                    bytes_received += len(chunk)
+                    if bytes_received > self.max_payload_size:
+                        raise PayloadTooLargeError(
+                            f"Response stream exceeded {self.max_payload_size // (1024 * 1024)}MB cap."
+                        )
+                    body_chunks.append(chunk)
+            finally:
+                await response.aclose()
 
-                raw_bytes = b"".join(body_chunks)
-                encoding = response.encoding or "utf-8"
-                html = raw_bytes.decode(encoding, errors="replace")
+            raw_bytes = b"".join(body_chunks)
+            encoding = response.encoding or "utf-8"
+            html = raw_bytes.decode(encoding, errors="replace")
 
-                latency = round((time.perf_counter() - start_time) * 1000, 2)
+            latency = round((time.perf_counter() - start_time) * 1000, 2)
 
-                return FetchResult(
-                    url=raw_url,
-                    final_url=str(response.url),
-                    status_code=response.status_code,
-                    headers=dict(response.headers),
-                    content_type=content_type,
-                    html=html,
-                    response_time_ms=latency,
-                    redirect_history=redirect_chain,
-                )
+            return FetchResult(
+                url=raw_url,
+                final_url=str(response.url),
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                content_type=content_type,
+                html=html,
+                response_time_ms=latency,
+                redirect_history=redirect_chain,
+            )
 
-            raise SSRFDetectedError("Too many redirects (potential infinite redirect loop).")
+        raise SSRFDetectedError("Too many redirects (potential infinite redirect loop).")
 
 
-# Singleton-like convenience function
+# Reusable default crawler instance
+_default_crawler = SafeAsyncCrawler()
+
+
 async def fetch_html(url: str) -> FetchResult:
-    """Top-level convenience fetcher with default parameters."""
-    crawler = SafeAsyncCrawler()
-    return await crawler.fetch(url)
+    """Top-level convenience fetcher using the persistent connection pool."""
+    return await _default_crawler.fetch(url)
