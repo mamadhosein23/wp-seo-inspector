@@ -1,5 +1,4 @@
-"""
-WP SEO Inspector - DOM Parsing & Extraction Engine.
+"""WP SEO Inspector - DOM Parsing & Extraction Engine.
 
 Dissects raw HTML documents using BeautifulSoup4 (lxml engine) to extract
 20+ technical SEO signals, metadata, heading trees, and semantic structure.
@@ -9,12 +8,12 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Final, List, Optional, Set, Tuple
-from urllib.parse import urljoin, urlparse
+from typing import Any, Final
+from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup, Comment, NavigableString, Tag
+from bs4 import BeautifulSoup, Comment, Tag
 
-from app.schemas import AuditReportData, CheckItem, HeadingStructure, LinkMetrics, MediaMetrics
+from app.schemas import AuditReportData, HeadingStructure, LinkMetrics, MediaMetrics
 from app.utils import is_internal_link
 
 # ---------------------------------------------------------
@@ -28,7 +27,7 @@ META_DESC_MAX_LENGTH: Final[int] = 160
 
 MIN_WORD_COUNT: Final[int] = 300
 
-IGNORED_LINK_SCHEMES: Final[Tuple[str, ...]] = (
+IGNORED_LINK_SCHEMES: Final[tuple[str, ...]] = (
     "#",
     "mailto:",
     "tel:",
@@ -37,7 +36,7 @@ IGNORED_LINK_SCHEMES: Final[Tuple[str, ...]] = (
     "whatsapp:",
 )
 
-NON_CONTENT_TAGS: Final[Set[str]] = {
+NON_CONTENT_TAGS: Final[set[str]] = {
     "script",
     "style",
     "noscript",
@@ -49,7 +48,6 @@ NON_CONTENT_TAGS: Final[Set[str]] = {
     "nav",
 }
 
-# Regex for Persian / Arabic / Latin word counting
 WORD_REGEX: Final[re.Pattern[str]] = re.compile(
     r"[\w\u0600-\u06FF]+(?:[-'’][\w\u0600-\u06FF]+)*",
     re.UNICODE,
@@ -68,13 +66,11 @@ class SEOAnalyzer:
     # Utility Helpers
     # -----------------------------------------------------
     @staticmethod
-    def _normalize_space(text: Optional[str]) -> str:
-        if not text:
-            return ""
-        return " ".join(text.split())
+    def _normalize_space(text: str | None) -> str:
+        return " ".join(text.split()) if text else ""
 
     @staticmethod
-    def _get_attr(tag: Optional[Tag], attr: str) -> Optional[str]:
+    def _get_attr(tag: Tag | None, attr: str) -> str | None:
         if not tag:
             return None
         val = tag.get(attr)
@@ -87,14 +83,14 @@ class SEOAnalyzer:
     # -----------------------------------------------------
     # Metadata Extractors
     # -----------------------------------------------------
-    def extract_title(self) -> Optional[str]:
+    def extract_title(self) -> str | None:
         title_tag = self.soup.find("title")
         if not title_tag:
             return None
         title_text = self._normalize_space(title_tag.get_text())
         return title_text or None
 
-    def extract_meta_content(self, name_or_prop: str, is_property: bool = False) -> Optional[str]:
+    def extract_meta_content(self, name_or_prop: str, is_property: bool = False) -> str | None:
         attr_key = "property" if is_property else "name"
         tag = self.soup.find(
             "meta",
@@ -103,7 +99,7 @@ class SEOAnalyzer:
         content = self._get_attr(tag, "content")
         return self._normalize_space(content) or None
 
-    def extract_canonical(self) -> Optional[str]:
+    def extract_canonical(self) -> str | None:
         link_tag = self.soup.find(
             "link",
             attrs={
@@ -115,41 +111,41 @@ class SEOAnalyzer:
             },
         )
         href = self._get_attr(link_tag, "href")
-        if not href:
-            return None
-        return urljoin(self.base_url, href)
+        return urljoin(self.base_url, href) if href else None
 
     # -----------------------------------------------------
     # Structure & Content
     # -----------------------------------------------------
     def extract_headings(self) -> HeadingStructure:
-        h1_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h1")]
-        h2_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h2")]
-        h3_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h3")]
-        h4_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h4")]
-        h5_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h5")]
-        h6_tags = [self._normalize_space(t.get_text()) for t in self.soup.find_all("h6")]
+        headings_map: dict[str, list[str]] = {f"h{i}": [] for i in range(1, 7)}
+
+        for tag in self.soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+            text = self._normalize_space(tag.get_text())
+            headings_map[tag.name.lower()].append(text)
 
         return HeadingStructure(
-            h1_count=len(h1_tags),
-            h2_count=len(h2_tags),
-            h3_count=len(h3_tags),
-            h4_count=len(h4_tags),
-            h5_count=len(h5_tags),
-            h6_count=len(h6_tags),
-            h1_contents=h1_tags,
+            h1_count=len(headings_map["h1"]),
+            h2_count=len(headings_map["h2"]),
+            h3_count=len(headings_map["h3"]),
+            h4_count=len(headings_map["h4"]),
+            h5_count=len(headings_map["h5"]),
+            h6_count=len(headings_map["h6"]),
+            h1_contents=headings_map["h1"],
         )
 
-    def extract_text_and_word_count(self) -> Tuple[str, int]:
-        # Shallow copy or selective traversal without mutating soup
-        visible_chunks: List[str] = []
+    def extract_text_and_word_count(self) -> tuple[str, int]:
+        # استخراج کل استرینگ‌ها با حذف کامل تمام اجداد نامربوط (نه فقط والد مستقیم)
+        visible_chunks: list[str] = []
+
         for element in self.soup.find_all(string=True):
             if isinstance(element, Comment):
                 continue
-            parent = element.parent
-            if parent and parent.name and parent.name.lower() in NON_CONTENT_TAGS:
+            # بررسی کل زنجیره والدین برای تضمین عدم وجود در هدر، فوتر، اسکریپت و...
+            parent_names = {parent.name.lower() for parent in element.parents if parent and parent.name}
+            if parent_names.intersection(NON_CONTENT_TAGS):
                 continue
-            cleaned = str(element).strip()
+
+            cleaned = element.strip()
             if cleaned:
                 visible_chunks.append(cleaned)
 
@@ -163,7 +159,6 @@ class SEOAnalyzer:
     # -----------------------------------------------------
     def extract_media(self) -> MediaMetrics:
         images = self.soup.find_all("img")
-        total = len(images)
         missing_alt = 0
         empty_alt = 0
 
@@ -175,7 +170,7 @@ class SEOAnalyzer:
                 empty_alt += 1
 
         return MediaMetrics(
-            total_images=total,
+            total_images=len(images),
             missing_alt=missing_alt,
             empty_alt=empty_alt,
         )
@@ -184,7 +179,7 @@ class SEOAnalyzer:
         internal_count = 0
         external_count = 0
         nofollow_count = 0
-        unique_links: Set[str] = set()
+        unique_links: set[str] = set()
 
         for anchor in self.soup.find_all("a", href=True):
             raw_href = anchor["href"].strip()
@@ -196,10 +191,9 @@ class SEOAnalyzer:
                 continue
             unique_links.add(abs_url)
 
-            rel_list = anchor.get("rel", [])
-            if isinstance(rel_list, str):
-                rel_list = rel_list.split()
-            if "nofollow" in [r.lower() for r in rel_list]:
+            rel_attr = anchor.get("rel", [])
+            rel_list = rel_attr if isinstance(rel_attr, list) else rel_attr.split()
+            if any(str(r).lower() == "nofollow" for r in rel_list):
                 nofollow_count += 1
 
             if is_internal_link(abs_url, self.base_url):
@@ -228,11 +222,11 @@ class SEOAnalyzer:
             "has_twitter_card": bool(tw_card),
         }
 
-    def extract_json_ld_schemas(self) -> List[dict[str, Any]]:
-        schemas: List[dict[str, Any]] = []
+    def extract_json_ld_schemas(self) -> list[dict[str, Any]]:
+        schemas: list[dict[str, Any]] = []
         script_tags = self.soup.find_all(
             "script",
-            attrs={"type": lambda v: v and str(v).lower().strip() == "application/ld+json"},
+            attrs={"type": lambda v: bool(v and str(v).lower().strip() == "application/ld+json")},
         )
         for script in script_tags:
             content = script.string or script.get_text(strip=True)
@@ -241,9 +235,13 @@ class SEOAnalyzer:
             try:
                 parsed = json.loads(content)
                 if isinstance(parsed, dict):
-                    schemas.append(parsed)
+                    # مدیریت اسکیماهای تو در تو و ساختار Yoast / RankMath
+                    if "@graph" in parsed and isinstance(parsed["@graph"], list):
+                        schemas.extend(item for item in parsed["@graph"] if isinstance(item, dict))
+                    else:
+                        schemas.append(parsed)
                 elif isinstance(parsed, list):
-                    schemas.extend([item for item in parsed if isinstance(item, dict)])
+                    schemas.extend(item for item in parsed if isinstance(item, dict))
             except (json.JSONDecodeError, TypeError):
                 continue
         return schemas
@@ -267,31 +265,31 @@ class SEOAnalyzer:
     # -----------------------------------------------------
     def analyze(self) -> AuditReportData:
         """Executes full DOM parsing and returns structured metrics."""
-        title = self.extract_title()
-        meta_description = self.extract_meta_content("description")
-        canonical = self.extract_canonical()
-        robots_meta = self.extract_meta_content("robots")
-
-        headings = self.extract_headings()
-        _, word_count = self.extract_text_and_word_count()
-        media = self.extract_media()
-        links = self.extract_links()
-        social = self.extract_social_graph()
         schemas = self.extract_json_ld_schemas()
-        is_wp = self.detect_wordpress()
+        social = self.extract_social_graph()
+        _, word_count = self.extract_text_and_word_count()
+
+        # استخراج ساختاریافته تایپ‌های JSON-LD
+        schema_types: list[str] = []
+        for s in schemas:
+            schema_type = s.get("@type")
+            if isinstance(schema_type, str):
+                schema_types.append(schema_type)
+            elif isinstance(schema_type, list):
+                schema_types.extend(str(t) for t in schema_type)
 
         return AuditReportData(
-            title=title,
-            meta_description=meta_description,
-            canonical=canonical,
-            robots_meta=robots_meta,
-            headings=headings,
+            title=self.extract_title(),
+            meta_description=self.extract_meta_content("description"),
+            canonical=self.extract_canonical(),
+            robots_meta=self.extract_meta_content("robots"),
+            headings=self.extract_headings(),
             word_count=word_count,
-            media=media,
-            links=links,
+            media=self.extract_media(),
+            links=self.extract_links(),
             has_open_graph=social["has_open_graph"],
             has_twitter_card=social["has_twitter_card"],
             has_structured_data=bool(schemas),
-            structured_data_types=[s.get("@type", "Unknown") for s in schemas if "@type" in s],
-            is_wordpress=is_wp,
+            structured_data_types=schema_types,
+            is_wordpress=self.detect_wordpress(),
         )
