@@ -1,191 +1,289 @@
-"""
-Web SEO Inspector — Scoring Engine
-====================================
-موتور امتیازدهی استاندارد مبتنی بر Deductive Weighting با اعمال سقف دسته‌ای (Category Capping).
-امتیاز پایه = ۱۰۰ و کسر امتیازها در چارچوب حداکثر تأثیر هر دسته انجام می‌شود.
+"""Web SEO Inspector — Scoring & Heuristic Engine.
+
+Deductive Category-Capped scoring model.
+Translates DOM audit signals & network metrics into structured checks and weighted scores.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
+from typing import Final
 
-from app.schemas import CheckCategory, CheckItem
-
+from app.http_client import FetchResult
+from app.schemas import (
+    AuditReportData,
+    CheckCategory,
+    CheckItem,
+    CheckStatus,
+    ScoreBreakdown,
+    ScoreResult,
+)
 
 # ---------------------------------------------------------------------------
-# ۱) سطوح شدت و سقف جریمه دسته‌بندی‌ها
+# ۱) سطوح شدت و سقف جریمه دسته‌بندی‌ها (مجموع دقیق = ۱۰۰)
 # ---------------------------------------------------------------------------
 
 class Severity(IntEnum):
-    """سطح جریمه پیش‌فرض به ازای هر خطا."""
-    CRITICAL = 30   # خطای مسدودکننده (e.g. 5xx, noindex)
-    HIGH     = 20   # خطای ساختاری حاد (e.g. missing title/h1)
-    MEDIUM   = 10   # خطای سئو تکنیکال سطح دو (e.g. canonical, meta desc)
-    LOW      = 5    # بهینه‌سازی‌های جزئی (e.g. alt, og tags)
+    """جریمه‌های استاندارد بر اساس سطح اهمیت خطای تکنیکال."""
+    CRITICAL = 30
+    HIGH = 20
+    MEDIUM = 10
+    LOW = 5
 
 
-# سقف مجاز کسر امتیاز به تفکیک دسته‌بندی مطابق جدول README
-CATEGORY_MAX_IMPACT: dict[CheckCategory, int] = {
-    "indexability":  40,
-    "structure":     20,
-    "metadata":      25,
-    "accessibility": 15,
-    "social":        10,
+CATEGORY_MAX_IMPACT: Final[dict[CheckCategory, int]] = {
+    CheckCategory.INDEXABILITY: 35,
+    CheckCategory.METADATA: 25,
+    CheckCategory.STRUCTURE: 20,
+    CheckCategory.ACCESSIBILITY: 10,
+    CheckCategory.SOCIAL: 10,
 }
 
 
 # ---------------------------------------------------------------------------
-# ۲) ثبت قوانین پیش‌فرض (Registry)
+# ۲) کلاس اصلی SEOScorer هماهنگ با FastAPI Entry Point
 # ---------------------------------------------------------------------------
 
-CHECK_RULES: dict[str, int] = {
-    # --- Indexability (Max 40) ---
-    "http_error":         Severity.CRITICAL,
-    "robots_noindex":     Severity.CRITICAL,
-    "status_code_failed": Severity.HIGH,
+class SEOScorer:
+    """Evaluates raw audit metrics and produces normalized weighted scores."""
 
-    # --- Structure (Max 20) ---
-    "h1_missing":         Severity.HIGH,
-    "h1_multiple":        Severity.MEDIUM,
-    "heading_hierarchy":  Severity.LOW,
+    def __init__(self, report_data: AuditReportData, fetch_result: FetchResult) -> None:
+        self.data = report_data
+        self.fetch = fetch_result
+        self.checks: list[CheckItem] = []
 
-    # --- Metadata (Max 25) ---
-    "title_missing":      Severity.HIGH,
-    "title_length":       Severity.LOW,
-    "meta_desc_missing":  Severity.MEDIUM,
-    "meta_desc_length":   Severity.LOW,
-    "canonical_missing":  Severity.MEDIUM,
-
-    # --- Accessibility (Max 15) ---
-    "images_without_alt": Severity.LOW,
-    "link_descriptors":   Severity.LOW,
-
-    # --- Social Graph (Max 10) ---
-    "og_tags_missing":    Severity.LOW,
-    "twitter_missing":    Severity.LOW,
-    "schema_missing":     Severity.LOW,
-}
-
-
-# ---------------------------------------------------------------------------
-# ۳) مدل‌های خروجی و گزارش
-# ---------------------------------------------------------------------------
-
-@dataclass(slots=True)
-class PenaltyBreakdown:
-    key: str
-    label: str
-    category: CheckCategory
-    message: str
-    severity: int
-    applied_penalty: int
-    rule_penalty: int
-
-
-@dataclass(slots=True)
-class ScoreReport:
-    total_score: int
-    max_score: int = 100
-    total_penalty: int = 0
-    items_checked: int = 0
-    issues_found: int = 0
-    category_penalties: dict[CheckCategory, int] = field(default_factory=dict)
-    penalties: list[PenaltyBreakdown] = field(default_factory=list)
-
-    @property
-    def percent(self) -> float:
-        if self.max_score <= 0:
-            return 0.0
-        return round((self.total_score / self.max_score) * 100, 2)
-
-
-# ---------------------------------------------------------------------------
-# ۴) موتور محاسبه با Group Capping
-# ---------------------------------------------------------------------------
-
-def calculate_seo_score(checks: list[CheckItem]) -> ScoreReport:
-    """
-    محاسبه نمره کل با اعمال جریمه‌های تفکیک‌شده و محدودسازی بر اساس سقف هر Category.
-    """
-    raw_category_penalties: dict[CheckCategory, int] = {
-        cat: 0 for cat in CATEGORY_MAX_IMPACT
-    }
-    penalties_list: list[PenaltyBreakdown] = []
-    items_checked = len(checks)
-    issues_found = 0
-
-    for check in checks:
-        # آیتم‌های موفق یا صرفاً اطلاع‌رسانی جریمه ندارند
-        if check.status in ("success", "info"):
-            continue
-
-        base_penalty = CHECK_RULES.get(check.key, Severity.LOW)
-
-        # اگر Analyzer جریمه اختصاصی داده باشد اولویت دارد؛ در غیر اینصورت وضعیت warning تخفیف ۵۰٪ می‌گیرد
-        if check.penalty > 0:
-            applied = check.penalty
-        elif check.status == "warning":
-            applied = max(1, base_penalty // 2)
-        else:
-            applied = base_penalty
-
-        applied = max(1, min(Severity.CRITICAL, applied))
-
-        category = check.category
-        if category in raw_category_penalties:
-            raw_category_penalties[category] += applied
-
-        issues_found += 1
-        penalties_list.append(
-            PenaltyBreakdown(
-                key=check.key,
-                label=check.label,
+    def _add_check(
+        self,
+        key: str,
+        label: str,
+        category: CheckCategory,
+        status: CheckStatus,
+        message: str,
+        penalty: int = 0,
+    ) -> None:
+        self.checks.append(
+            CheckItem(
+                key=key,
+                label=label,
                 category=category,
-                message=check.message,
-                severity=base_penalty,
-                applied_penalty=applied,
-                rule_penalty=base_penalty,
+                status=status,
+                message=message,
+                penalty=penalty,
             )
         )
 
-    # اعمال سقف مجاز جریمه روی هر دسته (Capping)
-    final_category_penalties: dict[CheckCategory, int] = {}
-    total_deductions = 0
+    # -----------------------------------------------------
+    # ارزیابی تک‌تک سیگنال‌ها (Heuristic Rules)
+    # -----------------------------------------------------
+    def _evaluate_indexability(self) -> None:
+        # ۱. وضعیت HTTP Status
+        if self.fetch.status_code >= 400:
+            self._add_check(
+                key="http_error",
+                label="HTTP Response Status",
+                category=CheckCategory.INDEXABILITY,
+                status=CheckStatus.ERROR,
+                message=f"Server returned HTTP {self.fetch.status_code}",
+                penalty=Severity.CRITICAL,
+            )
+        else:
+            self._add_check(
+                key="http_error",
+                label="HTTP Response Status",
+                category=CheckCategory.INDEXABILITY,
+                status=CheckStatus.SUCCESS,
+                message=f"Page is reachable (HTTP {self.fetch.status_code})",
+            )
 
-    for cat, raw_pen in raw_category_penalties.items():
-        max_allowed = CATEGORY_MAX_IMPACT[cat]
-        effective_penalty = min(raw_pen, max_allowed)
-        final_category_penalties[cat] = effective_penalty
-        total_deductions += effective_penalty
+        # ۲. متا تگ Robots / Noindex
+        robots = (self.data.robots_meta or "").lower()
+        if "noindex" in robots:
+            self._add_check(
+                key="robots_noindex",
+                label="Robots Meta Directive",
+                category=CheckCategory.INDEXABILITY,
+                status=CheckStatus.ERROR,
+                message="Page contains 'noindex' directive blocking search engines.",
+                penalty=Severity.CRITICAL,
+            )
 
-    final_score = max(0, min(100, 100 - total_deductions))
+        # ۳. آدرس کانونیکال (Canonical)
+        if not self.data.canonical:
+            self._add_check(
+                key="canonical_missing",
+                label="Canonical URL",
+                category=CheckCategory.INDEXABILITY,
+                status=CheckStatus.WARNING,
+                message="Canonical tag is missing.",
+                penalty=Severity.LOW,
+            )
+        else:
+            self._add_check(
+                key="canonical_missing",
+                label="Canonical URL",
+                category=CheckCategory.INDEXABILITY,
+                status=CheckStatus.SUCCESS,
+                message=f"Canonical link tag exists ({self.data.canonical}).",
+            )
 
-    return ScoreReport(
-        total_score=final_score,
-        total_penalty=total_deductions,
-        items_checked=items_checked,
-        issues_found=issues_found,
-        category_penalties=final_category_penalties,
-        penalties=penalties_list,
-    )
+    def _evaluate_metadata(self) -> None:
+        # Title
+        if not self.data.title:
+            self._add_check(
+                key="title_missing",
+                label="Page Title",
+                category=CheckCategory.METADATA,
+                status=CheckStatus.ERROR,
+                message="Document has no <title> tag.",
+                penalty=Severity.HIGH,
+            )
+        else:
+            t_len = len(self.data.title)
+            if t_len < 30 or t_len > 60:
+                self._add_check(
+                    key="title_length",
+                    label="Page Title Length",
+                    category=CheckCategory.METADATA,
+                    status=CheckStatus.WARNING,
+                    message=f"Title length ({t_len} chars) is outside optimal 30-60 char range.",
+                    penalty=Severity.LOW,
+                )
 
+        # Meta Description
+        if not self.data.meta_description:
+            self._add_check(
+                key="meta_desc_missing",
+                label="Meta Description",
+                category=CheckCategory.METADATA,
+                status=CheckStatus.WARNING,
+                message="Meta description is missing.",
+                penalty=Severity.MEDIUM,
+            )
+        else:
+            d_len = len(self.data.meta_description)
+            if d_len < 70 or d_len > 160:
+                self._add_check(
+                    key="meta_desc_length",
+                    label="Meta Description Length",
+                    category=CheckCategory.METADATA,
+                    status=CheckStatus.WARNING,
+                    message=f"Meta description length ({d_len} chars) is outside optimal 70-160 range.",
+                    penalty=Severity.LOW,
+                )
 
-# ---------------------------------------------------------------------------
-# ۵) توابع کمکی
-# ---------------------------------------------------------------------------
+    def _evaluate_structure(self) -> None:
+        # H1 Checks
+        h1_count = self.data.headings.h1_count
+        if h1_count == 0:
+            self._add_check(
+                key="h1_missing",
+                label="Primary Heading (H1)",
+                category=CheckCategory.STRUCTURE,
+                status=CheckStatus.ERROR,
+                message="Document has no <h1> heading tag.",
+                penalty=Severity.HIGH,
+            )
+        elif h1_count > 1:
+            self._add_check(
+                key="h1_multiple",
+                label="Primary Heading (H1)",
+                category=CheckCategory.STRUCTURE,
+                status=CheckStatus.WARNING,
+                message=f"Document contains {h1_count} H1 headings (recommended: exactly 1).",
+                penalty=Severity.LOW,
+            )
 
-def score_only(checks: list[CheckItem]) -> int:
-    """محاسبه سریع صرفاً مقدار عددی نمره نهایی."""
-    return calculate_seo_score(checks).total_score
+        # Word Count
+        if self.data.word_count < 300:
+            self._add_check(
+                key="word_count_low",
+                label="Content Thinness",
+                category=CheckCategory.STRUCTURE,
+                status=CheckStatus.WARNING,
+                message=f"Thin content detected ({self.data.word_count} words). Recommended >= 300.",
+                penalty=Severity.MEDIUM,
+            )
 
+    def _evaluate_accessibility(self) -> None:
+        media = self.data.media
+        if media.total_images > 0:
+            unlabeled = media.missing_alt + media.empty_alt
+            if unlabeled > 0:
+                ratio = round((unlabeled / media.total_images) * 100)
+                self._add_check(
+                    key="images_without_alt",
+                    label="Image Alt Attributes",
+                    category=CheckCategory.ACCESSIBILITY,
+                    status=CheckStatus.WARNING if ratio < 50 else CheckStatus.ERROR,
+                    message=f"{unlabeled} of {media.total_images} images lack descriptive alt tags ({ratio}%).",
+                    penalty=Severity.MEDIUM if ratio >= 50 else Severity.LOW,
+                )
 
-def summarize(checks: list[CheckItem]) -> dict[str, int]:
-    """خلاصه تجمیعی برای گزارش‌گیری سریع یا لاگ."""
-    report = calculate_seo_score(checks)
-    return {
-        "score": report.total_score,
-        "total_penalty": report.total_penalty,
-        "issues": report.issues_found,
-        "checked": report.items_checked,
-    }
+    def _evaluate_social_and_rich(self) -> None:
+        if not self.data.has_open_graph:
+            self._add_check(
+                key="og_tags_missing",
+                label="Open Graph Protocol",
+                category=CheckCategory.SOCIAL,
+                status=CheckStatus.WARNING,
+                message="Open Graph metadata tags are missing.",
+                penalty=Severity.LOW,
+            )
+
+        if not self.data.has_structured_data:
+            self._add_check(
+                key="schema_missing",
+                label="Structured Data (JSON-LD)",
+                category=CheckCategory.SOCIAL,
+                status=CheckStatus.WARNING,
+                message="No structured schema data found in page markup.",
+                penalty=Severity.LOW,
+            )
+
+    # -----------------------------------------------------
+    # محاسبه نهایی امتیاز با اعمال Group Capping
+    # -----------------------------------------------------
+    def calculate(self) -> ScoreResult:
+        # ۱. اجرای تمام ارزیابی‌ها
+        self._evaluate_indexability()
+        self._evaluate_metadata()
+        self._evaluate_structure()
+        self._evaluate_accessibility()
+        self._evaluate_social_and_rich()
+
+        # ۲. جمع‌آوری و کسر با Group Capping
+        raw_penalties: dict[CheckCategory, int] = {cat: 0 for cat in CATEGORY_MAX_IMPACT}
+
+        for check in self.checks:
+            if check.status in (CheckStatus.SUCCESS, CheckStatus.INFO):
+                continue
+            if check.category in raw_penalties:
+                raw_penalties[check.category] += check.penalty
+
+        # ۳. محاسبه نمرات دسته‌ای و کل
+        breakdown_dict: dict[str, int] = {}
+        total_deductions = 0
+
+        for cat, max_impact in CATEGORY_MAX_IMPACT.items():
+            applied_penalty = min(raw_penalties[cat], max_impact)
+            # نمره باقی‌مانده از سقف دسته
+            category_score = max_impact - applied_penalty
+            breakdown_dict[cat.value] = category_score
+            total_deductions += applied_penalty
+
+        final_total_score = max(0, 100 - total_deductions)
+
+        score_breakdown = ScoreBreakdown(
+            indexability=breakdown_dict[CheckCategory.INDEXABILITY.value],
+            metadata=breakdown_dict[CheckCategory.METADATA.value],
+            structure=breakdown_dict[CheckCategory.STRUCTURE.value],
+            accessibility=breakdown_dict[CheckCategory.ACCESSIBILITY.value],
+            social=breakdown_dict[CheckCategory.SOCIAL.value],
+        )
+
+        return ScoreResult(
+            total_score=final_total_score,
+            breakdown=score_breakdown,
+            checks=self.checks,
+        )
