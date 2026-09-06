@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useId, memo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useId, memo, useEffect, useRef, useCallback } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -48,6 +48,35 @@ const STATUS_CONFIG: Record<CheckStatus, StatusMeta> = {
   warning: {
     icon: AlertTriangle,
     label: "هشدار",
+    badgeide-react";
+import { cva } from "class-variance-authority";
+import { cn } from "@/lib/utils";
+import type { AuditReport, CheckResult, CheckStatus, CheckCategory } from "@/types/audit";
+
+interface AuditDashboardProps {
+  result: AuditReport;
+  className?: string;
+}
+
+interface StatusMeta {
+  icon: LucideIcon;
+  label: string;
+  badgeClass: string;
+  borderClass: string;
+  textClass: string;
+}
+
+const STATUS_CONFIG: Record<CheckStatus, StatusMeta> = {
+  fail: {
+    icon: XCircle,
+    label: "بحرانی",
+    badgeClass: "bg-destructive/10 text-destructive border-destructive/20",
+    borderClass: "border-s-destructive",
+    textClass: "text-destructive",
+  },
+  warning: {
+    icon: AlertTriangle,
+    label: "هشدار",
     badgeClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
     borderClass: "border-s-amber-500",
     textClass: "text-amber-500",
@@ -63,45 +92,53 @@ const STATUS_CONFIG: Record<CheckStatus, StatusMeta> = {
     icon: CheckCircle2,
     label: "پاس‌شده",
     badgeClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-    borderClass: "border-s-emerald-500",
-    textClass: "text-emerald-500",
-  },
-};
-
-const CATEGORY_LABELS: Record<CheckCategory, string> = {
-  indexability: "قابلیت ایندکس",
-  security: "امنیت فنی",
-  performance: "عملکرد",
-  content: "ساختار محتوا",
-  structure: "داده‌های ساختاریافته",
-};
-
-const STATUS_SEVERITY_ORDER: Record<CheckStatus, number> = {
-  fail: 1,
-  warning: 2,
-  info: 3,
-  pass: 4,
-};
-
-const badgeVariants = cva(
-  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold select-none border transition-colors",
-  {
-    variants: {
-      status: {
-        fail: "bg-destructive/10 text-destructive border-destructive/20",
-        warning: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-        info: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20",
-        pass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+    borderClass: "border-s-emerald-: STATUS_CONFIG.info.badgeClass,
+        pass: STATUS_CONFIG.pass.badgeClass,
       },
     },
     defaultVariants: { status: "info" },
   }
 );
 
+// تابع کمکی برای کپی پایدار متن
+async function copyToClipboard(text: string): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // ادامه با متد fallback
+    }
+  }
+
+  try {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    textArea.style.left = "-999999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand("copy");
+    document.body.removeChild(textArea);
+    return successful;
+  } catch {
+    return false;
+  }
+}
+
 // گیج امتیاز حلقه‌ای داینامیک
-const ScoreGauge = memo(function ScoreGauge({ score }: { score: number }) {
+const ScoreGauge = memo(function ScoreGauge({ score = 0 }: { score: number }) {
   const gradientId = useId();
-  const safeScore = useMemo(() => Math.max(0, Math.min(100, Math.round(score))), [score]);
+  const safeScore = useMemo(() => {
+    const num = Number(score);
+    if (Number.isNaN(num)) return 0;
+    return Math.max(0, Math.min(100, Math.round(num)));
+  }, [score]);
+
   const size = 130;
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
@@ -196,7 +233,7 @@ const SummaryMetrics = memo(function SummaryMetrics({
             </div>
             <div className="mt-2 flex items-baseline gap-1">
               <span className="text-2xl font-black tabular-nums text-foreground">
-                {counts[status]}
+                {counts[status] ?? 0}
               </span>
               <span className="text-[11px] text-muted-foreground">مورد</span>
             </div>
@@ -214,7 +251,7 @@ const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const contentId = useId();
 
-  const meta = STATUS_CONFIG[check.status];
+  const meta = STATUS_CONFIG[check.status] ?? STATUS_CONFIG.info;
   const Icon = meta.icon;
 
   useEffect(() => {
@@ -223,26 +260,25 @@ const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
     };
   }, []);
 
-  const handleCopy = async () => {
-    try {
-      const content = `[${meta.label}] ${check.name}\nدسته: ${
-        CATEGORY_LABELS[check.category] || check.category
-      }\nپیام: ${check.message}${
-        check.recommendation ? `\nتوصیه فنی: ${check.recommendation}` : ""
-      }`;
-      await navigator.clipboard.writeText(content);
+  const handleCopy = useCallback(async () => {
+    const content = `[${meta.label}] ${check.name}\nدسته: ${
+      CATEGORY_LABELS[check.category] || check.category
+    }\nپیام: ${check.message}${
+      check.recommendation ? `\nتوصیه فنی: ${check.recommendation}` : ""
+    }`;
+
+    const ok = await copyToClipboard(content);
+    if (ok) {
       setCopied(true);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // نادیده‌گرفتن خطای فاقد دسترسی کلیپ‌بورد
     }
-  };
+  }, [check, meta]);
 
   return (
     <article
       className={cn(
-        "rounded-xl border bg-card text-card-foreground shadow-sm transition-all duration-200 border-s-[5px]",
+        "rounded-xl border border-border bg-card text-card-foreground shadow-sm transition-all duration-200 border-s-[5px]",
         meta.borderClass
       )}
     >
@@ -358,13 +394,15 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
       })
       .sort((a, b) => {
         if (sortOrder === "severity") {
-          return STATUS_SEVERITY_ORDER[a.status] - STATUS_SEVERITY_ORDER[b.status];
+          const aOrder = STATUS_SEVERITY_ORDER[a.status] ?? 99;
+          const bOrder = STATUS_SEVERITY_ORDER[b.status] ?? 99;
+          return aOrder - bOrder;
         }
         return a.name.localeCompare(b.name, "fa");
       });
   }, [result?.checks, filterStatus, searchQuery, sortOrder]);
 
-  const handleExportJSON = () => {
+  const handleExportJSON = useCallback(() => {
     const blob = new Blob([JSON.stringify(result, null, 2)], {
       type: "application/json",
     });
@@ -376,7 +414,7 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  };
+  }, [result]);
 
   if (!result?.checks || result.checks.length === 0) {
     return (
