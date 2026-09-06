@@ -26,34 +26,50 @@ interface UrlFormProps {
 // ----------------------------------------------------
 // توابع کمکی اعتبارسنجی و نرمال‌سازی URL
 // ----------------------------------------------------
-function normalizeAndValidateUrl(rawInput: string): { isValid: boolean; normalizedUrl: string; errorMsg?: string } {
+function normalizeAndValidateUrl(rawInput: string): {
+  isValid: boolean;
+  normalizedUrl: string;
+  errorMsg?: string;
+} {
   let trimmed = rawInput.trim();
+
   if (!trimmed) {
-    return { isValid: false, normalizedUrl: "", errorMsg: "آدرس وب‌سایت نمی‌تواند خالی باشد." };
+    return {
+      isValid: false,
+      normalizedUrl: "",
+      errorMsg: "آدرس وب‌سایت نمی‌تواند خالی باشد.",
+    };
   }
 
-  // اضافه کردن خودکار https در صورت عدم تایپ پروتکل
   if (!/^https?:\/\//i.test(trimmed)) {
     trimmed = `https://${trimmed}`;
   }
 
   try {
     const parsed = new URL(trimmed);
-    const hasValidHostname = parsed.hostname.includes(".") && parsed.hostname.split(".")[1]?.length >= 2;
+
+    const hasValidHostname =
+      parsed.hostname.includes(".") &&
+      parsed.hostname.split(".").slice(-1)[0].length >= 2;
 
     if (!hasValidHostname) {
-      return { isValid: false, normalizedUrl: trimmed, errorMsg: "دامنه وارد شده ساختار معتبری ندارد (مثال: example.com)." };
+      return {
+        isValid: false,
+        normalizedUrl: trimmed,
+        errorMsg: "دامنه وارد شده ساختار معتبری ندارد (مثال: example.com).",
+      };
     }
 
     return { isValid: true, normalizedUrl: parsed.toString() };
   } catch {
-    return { isValid: false, normalizedUrl: trimmed, errorMsg: "فرمت آدرس URL نامعتبر است." };
+    return {
+      isValid: false,
+      normalizedUrl: trimmed,
+      errorMsg: "فرمت آدرس URL نامعتبر است.",
+    };
   }
 }
 
-// ----------------------------------------------------
-// کامپوننت اصلی فرم تحلیل
-// ----------------------------------------------------
 export function UrlForm({
   onAuditStart,
   onAuditComplete,
@@ -61,54 +77,59 @@ export function UrlForm({
   defaultUrl = "https://tamironlineesfahan.ir",
   className,
 }: UrlFormProps) {
-  const [url, setUrl] = useState<string>(defaultUrl);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [url, setUrl] = useState(defaultUrl);
+  const [isLoading, setIsLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [recentUrls, setRecentUrls] = useState<string[]>([]);
-  const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const historyRef = useRef<HTMLDivElement>(null);
 
-  // بارگذاری تاریخچه آدرس‌های تحلیل‌شده از LocalStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem("recent_audit_urls");
       if (stored) {
-        setRecentUrls(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setRecentUrls(parsed.filter((item): item is string => typeof item === "string"));
+        }
       }
     } catch {
-      // نادیده‌گرفتن خطای localStorage در محیط‌های Private یا فاقد مجوز
+      // ignore
     }
   }, []);
 
-  // بستن منوی تاریخچه در صورت کلیک خارج از آن
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
+    function handlePointerDown(e: MouseEvent) {
       if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
         setShowHistory(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
-  // ذخیره آدرس موفق در LocalStorage
   const saveToHistory = useCallback((savedUrl: string) => {
     setRecentUrls((prev) => {
       const filtered = prev.filter((item) => item !== savedUrl);
       const updated = [savedUrl, ...filtered].slice(0, 5);
+
       try {
         localStorage.setItem("recent_audit_urls", JSON.stringify(updated));
-      } catch {}
+      } catch {
+        // ignore
+      }
+
       return updated;
     });
   }, []);
 
-  const handleClearInput = () => {
+  const handleClearInput = useCallback(() => {
     setUrl("");
     setValidationError(null);
-  };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,27 +142,36 @@ export function UrlForm({
     }
 
     setValidationError(null);
-    setUrl(normalizedUrl);
     onError("");
     setIsLoading(true);
     onAuditStart();
+    setShowHistory(false);
 
-    // لغو ریکوئست قبلی در صورت فعال بودن
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    abortControllerRef.current = new AbortController();
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
-      const result = await performAudit(normalizedUrl);
+      const result = await performAudit(normalizedUrl, {
+        signal: controller.signal,
+      });
+
+      setUrl(normalizedUrl);
       saveToHistory(normalizedUrl);
       onAuditComplete(result);
-    } catch (err: any) {
-      if (err?.name === "AbortError") return;
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
+
       const message =
         err instanceof Error
           ? err.message
           : "خطای ناشناخته در ارتباط با سرور تحلیل‌گر رخ داد.";
+
       console.error("Audit Request Error:", err);
       onError(message);
     } finally {
@@ -150,11 +180,8 @@ export function UrlForm({
   };
 
   return (
-    <div
-      dir="rtl"
-      className={cn("w-full max-w-2xl mx-auto space-y-3 font-sans", className)}
-    >
-      <form onSubmit={handleSubmit} noValidate className="relative w-full">
+    <div dir="rtl" className={cn("w-full max-w-2xl mx-auto space-y-3 font-sans", className)}>
+      <form onSubmit={handleSubmit} noValidate className="relative w-full" ref={historyRef}>
         <div
           className={cn(
             "relative flex items-center rounded-2xl border transition-all duration-200 shadow-sm",
@@ -164,7 +191,6 @@ export function UrlForm({
               : "border-gray-200 dark:border-zinc-800 focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-500/10"
           )}
         >
-          {/* آیکون وضعیت و ورودی */}
           <div className="ps-4 text-gray-400 dark:text-zinc-500 shrink-0">
             <Globe className="w-5 h-5" />
           </div>
@@ -186,7 +212,6 @@ export function UrlForm({
             aria-invalid={Boolean(validationError)}
           />
 
-          {/* دکمه پاک کردن سریع ورودی */}
           {url && !isLoading && (
             <button
               type="button"
@@ -198,7 +223,6 @@ export function UrlForm({
             </button>
           )}
 
-          {/* دکمه باز کردن تاریخچه */}
           {recentUrls.length > 0 && !isLoading && (
             <button
               type="button"
@@ -210,7 +234,6 @@ export function UrlForm({
             </button>
           )}
 
-          {/* دکمه سابمیت واکنش‌گرا و سازگار با RTL */}
           <div className="p-1.5">
             <button
               type="submit"
@@ -236,17 +259,13 @@ export function UrlForm({
           </div>
         </div>
 
-        {/* منوی بازشونده تاریخچه جستجوهای اخیر */}
         {showHistory && (
-          <div
-            ref={historyRef}
-            className="absolute z-20 top-full start-0 end-0 mt-2 p-2 rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl"
-          >
+          <div className="absolute z-20 top-full start-0 end-0 mt-2 p-2 rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl">
             <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 dark:border-zinc-800 mb-1 text-xs text-gray-400">
               <span>آدرس‌های بررسی‌شده اخیر</span>
               <button
-                type="button"
-                onClick={() => {
+                type="_audit_urls");
+                 ={() => {
                   setRecentUrls([]);
                   localStorage.removeItem("recent_audit_urls");
                   setShowHistory(false);
@@ -256,6 +275,7 @@ export function UrlForm({
                 پاک‌سازی تاریخچه
               </button>
             </div>
+
             {recentUrls.map((item) => (
               <button
                 key={item}
@@ -264,19 +284,18 @@ export function UrlForm({
                   setUrl(item);
                   setShowHistory(false);
                 }}
-                className="w-full flex items-center justify-between p-2.5 rounded-lg text-start text-xs font-mono text-gray-700 dark:text-zinc-300 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/30 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                className="group w-full flex items-center justify-between p-2.5 rounded-lg text-start text-xs font-mono text-gray-700 dark:text-zinc-300 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/30 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
               >
                 <span className="truncate max-w-[450px]" dir="ltr">
                   {item}
                 </span>
-                <CheckCircle2 className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100" />
+                <CheckCircle2 className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
             ))}
           </div>
         )}
       </form>
 
-      {/* نمایش خطای اعتبارسنجی کلاینت */}
       {validationError && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-xs text-red-600 dark:text-red-400 animate-in fade-in">
           <AlertCircle className="w-4 h-4 shrink-0" />
@@ -284,12 +303,9 @@ export function UrlForm({
         </div>
       )}
 
-      {/* بخش توضیحات تکمیلی و راهنما */}
       <div className="flex items-center justify-center gap-1.5 text-xs text-gray-400 dark:text-zinc-500">
         <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-        <span>
-          تحلیل ساختار تکنیکال، اسکیماها، پرفورمنس و بهینه‌سازی مخصوص وردپرس
-        </span>
+        <span>تحلیل ساختار تکنیکال، اسکیماها، پرفورمنس و بهینه‌سازی مخصوص وردپرس</span>
       </div>
     </div>
   );
