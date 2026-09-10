@@ -9,8 +9,10 @@ from __future__ import annotations
 import logging
 from typing import Final
 
-
+# -----------------------------------------------------
 # Application Metadata
+# -----------------------------------------------------
+
 __title__: Final[str] = "wp-seo-inspector"
 __description__: Final[str] = (
     "A High-Performance Technical SEO Audit Engine & Analytics Interface"
