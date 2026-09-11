@@ -2,7 +2,7 @@
 
 Pure, deterministic utility routines for URL normalization,
 Unicode text sanitization, and Persian/Arabic word tokenization.
-"""
+
 from __future__ import annotations
 
 import re
