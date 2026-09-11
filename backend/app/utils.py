@@ -1,7 +1,7 @@
 """WP SEO Inspector — Utility Functions.
 
 Pure, deterministic utility routines for URL normalization,
-Unicode text sanitization, and 
+Unicode text 
 
 from __future__ import annotations
 
