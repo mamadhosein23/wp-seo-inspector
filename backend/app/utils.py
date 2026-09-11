@@ -1,4 +1,3 @@
-"""WP SEO Inspector — Utility Functions.
 
 
 
