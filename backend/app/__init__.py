@@ -1,12 +1,6 @@
 from __future__ import annotations
-
 import logging
 from typing import Final
-
-# -----------------------------------------------------
-# Application Metadata
-# -----------------------------------------------------
-
 __title__: Final[str] = "wp-seo-inspector"
 __description__: Final[str] = (
     "A High-Performance Technical SEO Audit Engine & Analytics Interface"
@@ -16,13 +10,8 @@ __author__: Final[str] = "WP SEO Inspector Core Team"
 __license__: Final[str] = "MIT"
 
 __version_info__: Final[tuple[int, int, int]] = (1, 0, 0)
-
-# ---------------------------------------------------------
-# Logging Configuration
-# ---------------------------------------------------------
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
 # ---------------------------------------------------------
 # Public API Exposures
 # ---------------------------------------------------------
