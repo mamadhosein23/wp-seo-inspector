@@ -1,7 +1,5 @@
 export const CHECK_STATUSES = ["success", "warning", "error", "info"] as const;
-
 export type CheckStatus = (typeof CHECK_STATUSES)[number];
-
 export const CHECK_CATEGORIES = [
   "technical",
   "content",
@@ -10,11 +8,8 @@ export const CHECK_CATEGORIES = [
   "schema",
   "security",
 ] as const;
-
 export type CheckCategory = (typeof CHECK_CATEGORIES)[number];
-
 export type Nullable<T> = T | null;
-
 /**
  * کلیدهای شناخته‌شده به همراه پشتیبانی از کلیدهای سفارشی بدون از بین رفتن Autocomplete
  */
