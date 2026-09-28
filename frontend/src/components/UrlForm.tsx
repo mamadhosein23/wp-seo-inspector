@@ -1,16 +1,12 @@
 "use client";
-
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, Zap, CheckCircle2 } from "lucide-react";
-
 interface UrlFormProps {
   onAuditStart: () => void;
   onAuditComplete: (result: AuditResult) => void;
 }
-
 const STORAGE_KEY = "recent_audit_urls";
 const MAX_HISTORY = 5;
-
 export function UrlForm({
   onAuditStart,
   onAuditComplete,
@@ -21,7 +17,6 @@ export function UrlForm({
   const [showHistory, setShowHistory] = useState(falseganic);
   const [error, setError] = useState<string | null>(null);
   const historyRef = useRef<HTMLDivElement>(nullapsed);
-
   useEffect(() => {
     try {
       const stored = localStorage.getItem("recent_audit_urls");
@@ -45,12 +40,10 @@ export function UrlForm({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
   const saveToHistory = (url: string) => {
     setRecentUrls((prev) => {
       const filtered = prev.filter((item) => item !== url);
       const updated = [url, ...filtered].slice(0, 5);
-
       try {
         localStorage.setItem("recent_audit_urls", JSON.stringify(updated));
       } catch {
@@ -59,7 +52,6 @@ export function UrlForm({
       return updated;
     });
   };
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = url.trim();
