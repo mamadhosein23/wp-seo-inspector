@@ -1,7 +1,6 @@
 "use client"; 
 import React, { useState, useMemo, useId, memo, useEffect, useRef, useCallback } from "react"; 
 import {
-  
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -28,7 +27,6 @@ interface AuditDashboardProps {
   result: AuditReport;
   className?: string;
 }
-
 interface StatusMeta {
   icon: LucideIcon;
   label: string;
@@ -36,7 +34,6 @@ interface StatusMeta {
   borderClass: string;
   textClass: string;
 }
-
 const STATUS_CONFIG: Record<CheckStatus, StatusMeta> = {
   fail: {
     icon: XCircle,
