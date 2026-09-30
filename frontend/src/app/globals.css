@@ -8,8 +8,6 @@
     --foreground: 224 71.4% 4.1%;
     --card: 0 0% 100%;
     --card-foreground: 224 71.4% 4.1%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 71.4% 4.1%;
     --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
     --secondary: 220 14.3% 95.9%;
@@ -21,46 +19,29 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --success: 142.1 76.2% 36.3%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92.2% 50%;
-    --warning-foreground: 26 83.3% 14.1%;
-    --info: 199 89% 48%;
-    --info-foreground: 0 0% 100%;
     --border: 220 13% 91%;
-    --input: 220 13% 91%;
     --ring: 221.2 83.2% 53.3%;
-    --radius: 0.75rem;
-
     color-scheme: light;
   }
 
   .dark {
-    --background: 224 71.4% 4.1%;
-    --foreground: 210 20% 98%;
-    --card: 222.2 47.4% 7%;
-    --card-foreground: 210 20% 98%;
-    --popover: 222.2 47.4% 7%;
-    --popover-foreground: 210 20% 98%;
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 4.9%;
+    --card-foreground: 0 0% 98%;
     --primary: 217.2 91.2% 59.8%;
     --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 215 27.9% 16.9%;
-    --secondary-foreground: 210 20% 98%;
-    --muted: 215 27.9% 16.9%;
-    --muted-foreground: 217.9 10.6% 64.9%;
-    --accent: 215 27.9% 16.9%;
-    --accent-foreground: 210 20% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 20% 98%;
+    --destructive-foreground: 0 0% 98%;
     --success: 142.1 70.6% 45.3%;
-    --success-foreground: 0 0% 100%;
-    --warning: 45 93% 47%;
-    --warning-foreground: 26 83.3% 14.1%;
-    --info: 199 89% 55%;
-    --info-foreground: 0 0% 100%;
-    --border: 215 27.9% 16.9%;
-    --input: 215 27.9% 16.9%;
+    --border: 240 3.7% 15.9%;
     --ring: 217.2 91.2% 59.8%;
-
     color-scheme: dark;
   }
 
@@ -69,94 +50,67 @@
     box-sizing: border-box;
   }
 
-  html {
-    scroll-behavior: smooth;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
     min-height: 100dvh;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-  }
-
-  ::selection {
-    background-color: hsl(var(--primary) / 0.25);
-    color: hsl(var(--primary));
   }
 }
 
 @layer components {
-  /* کارت نئومدرن با افکت گرادینت بوردر */
-  .card-base {
-    @apply relative overflow-hidden rounded-2xl border border-border/60 bg-card/60 p-6 
-      text-card-foreground backdrop-blur-xl shadow-sm transition-all duration-300;
+  /* کارت لوکس شیشه‌ای با هایلایت داخلی (Subtle Inner Border) */
+  .card-pro {
+    @apply relative overflow-hidden rounded-2xl border border-white/[0.08] bg-card/40 p-6 
+      backdrop-blur-2xl transition-all duration-300
+      before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl 
+      before:border before:border-white/10 before:content-['']
+      hover:-translate-y-1 hover:border-primary/40 hover:shadow-2xl hover:shadow-primary/10;
   }
 
-  .card-hover {
-    @apply hover:-translate-y-1 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5;
+  /* دکمه Shimmering Vercel-Style (نور چرخشی در لبه) */
+  .btn-shimmer {
+    @apply relative inline-flex h-11 animate-shimmer items-center justify-center rounded-xl 
+      border border-slate-800 bg-[linear-gradient(110deg,#000103,45%,#1e2638,55%,#000103)] 
+      bg-[length:200%_100%] px-6 font-medium text-slate-400 
+      transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-50;
   }
 
-  /* دکمه استایل Linear / Vercel با نور لبه (Inner Glow) */
-  .btn {
-    @apply relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-xl px-4 py-2.5 
-      text-sm font-medium transition-all duration-200 
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 
-      focus-visible:ring-offset-background active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50;
+  /* دکمه نئونی با هایپر گلو (Hyper Glow Button) */
+  .btn-neon {
+    @apply relative inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 
+      text-sm font-semibold text-primary-foreground shadow-[0_0_20px_hsl(var(--primary)/0.35)] 
+      transition-all duration-300 hover:shadow-[0_0_30px_hsl(var(--primary)/0.6)] 
+      hover:scale-[1.02] active:scale-[0.98];
   }
 
-  .btn-primary {
-    @apply btn bg-primary text-primary-foreground shadow-md shadow-primary/20 
-      hover:bg-primary/95 hover:shadow-lg hover:shadow-primary/30;
+  /* پالس راداری چند لایه (Live Ping Indicator) */
+  .status-radar {
+    @apply relative flex h-2.5 w-2.5;
   }
-
-  .btn-glass {
-    @apply btn border border-white/10 bg-white/5 backdrop-blur-md 
-      hover:bg-white/10 dark:border-white/5 dark:bg-white/[0.03] dark:hover:bg-white/[0.08];
+  .status-radar span:first-child {
+    @apply absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75;
   }
-
-  /* Badge / چیپ‌های درخشان (Glowing Chips) */
-  .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium tracking-wide transition-colors;
+  .status-radar span:last-child {
+    @apply relative inline-flex h-2.5 w-2.5 rounded-full bg-success;
   }
-
-  .chip-dot {
-    @apply h-1.5 w-1.5 rounded-full animate-pulse;
-  }
-
-  .chip-success {
-    @apply chip border border-success/30 bg-success/10 text-success shadow-[0_0_12px_rgba(34,197,94,0.15)];
-  }
-  .chip-success .chip-dot { @apply bg-success; }
-
-  .chip-warning {
-    @apply chip border border-warning/30 bg-warning/10 text-warning shadow-[0_0_12px_rgba(245,158,11,0.15)];
-  }
-  .chip-warning .chip-dot { @apply bg-warning; }
-
-  .chip-error {
-    @apply chip border border-destructive/30 bg-destructive/10 text-destructive shadow-[0_0_12px_rgba(239,68,68,0.15)];
-  }
-  .chip-error .chip-dot { @apply bg-destructive; }
 }
 
 @layer utilities {
-  /* پس‌زمینه Grid مدرن برای صفحات داشبورد یا لندینگ */
-  .bg-grid {
-    background-size: 32px 32px;
-    background-image: 
-      linear-gradient(to right, hsl(var(--border) / 0.5) 1px, transparent 1px),
-      linear-gradient(to bottom, hsl(var(--border) / 0.5) 1px, transparent 1px);
+  /* انیمیشن Shimmer بدون JS */
+  @keyframes shimmer {
+    from { background-position: 0 0; }
+    to { background-position: -200% 0; }
+  }
+  .animate-shimmer {
+    animation: shimmer 2s linear infinite;
   }
 
-  /* مسک گرادیانت برای فید کردن لبه‌های گرید */
-  .mask-radial {
-    mask-image: radial-gradient(circle at center, black, transparent 80%);
+  /* نویز باگراند بسیار ریز و هایپر رئال (SVG Inline Noise Data-URI) */
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
   }
 
-  /* متن گرادینت پرمیوم */
-  .text-gradient {
-    @apply bg-gradient-to-r from-foreground via-foreground/80 to-muted-foreground bg-clip-text text-transparent;
+  /* نورافکن پس‌زمینه (Spotlight) */
+  .spotlight {
+    background: radial-gradient(600px circle at var(--x, 50%) var(--y, 50%), hsl(var(--primary) / 0.15), transparent 80%);
   }
 }
