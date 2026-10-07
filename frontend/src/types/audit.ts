@@ -1,5 +1,6 @@
 export const CHECK_STATUSES = ["success", "warning", "error", "info"] as const;
 export type CheckStatus = (typeof CHECK_STATUSES)[number];
+
 export const CHECK_CATEGORIES = [
   "technical",
   "content",
@@ -9,9 +10,11 @@ export const CHECK_CATEGORIES = [
   "security",
 ] as const;
 export type CheckCategory = (typeof CHECK_CATEGORIES)[number];
+
 export type Nullable<T> = T | null;
+
 /**
- * کلیدهای شناخته‌شده به همراه پشتیبانی از کلیدهای سفارشی بدون از بین رفتن Autocomplete
+ * کلیدهای ممیزی به همراه پشتیبانی اتوکامپلیت برای کلیدهای کاستوم
  */
 export type KnownAuditCheckKey =
   | "http_status"
@@ -44,13 +47,14 @@ export type SeoCheckValue =
   | unknown[];
 
 /**
- * ساختار هر آیتم ممیزی در داشبورد
+ * ساختار هر چک آیتم (همگام با نیازهای UI و Pydantic)
  */
 export interface CheckItem {
   id?: string;
   key: AuditCheckKey;
-  label: string;
-  category?: CheckCategory;
+  label: string; // نام نمایشی چک
+  title?: string; // سازگاری با داشبورد قبلی
+  category: CheckCategory;
   status: CheckStatus;
   value: SeoCheckValue;
   message: string;
@@ -59,7 +63,7 @@ export interface CheckItem {
 }
 
 /**
- * جزئیات متاتگ‌های Open Graph
+ * متاتگ‌های Open Graph
  */
 export interface OpenGraphData {
   title?: Nullable<string>;
@@ -71,41 +75,41 @@ export interface OpenGraphData {
 }
 
 /**
- * ساختار اصلی ریسپانس بازگشتی از FastAPI
+ * ریسپانس کلی موتور ممیزی سئو (FastAPI Response Schema)
  */
 export interface AuditResponse {
   id?: string;
   url: string;
   final_url: string;
-  audit_timestamp?: string;
-  score: number; // بین 0 تا 100
+  audit_timestamp?: string | number;
+  score: number; // 0 - 100
 
-  // مشخصات شبکه و سرور
+  // سرور و وضعیت HTTP
   http_status_code: number;
   response_time_ms: number;
   content_type: string;
   server_header?: Nullable<string>;
 
-  // سئو متاتگ‌ها و عناوین
+  // متاتگ‌ها و ایندکس‌پذیری
   title: Nullable<string>;
   meta_description: Nullable<string>;
   canonical: Nullable<string>;
   robots_meta: Nullable<string>;
 
-  // محتوا و تگ‌های ساختاری
+  // ساختار محتوا
   h1_count: number;
   h2_count: number;
   word_count: number;
 
-  // مدیا و تصاویر
+  // تصاویر
   total_images: number;
   images_without_alt: number;
 
-  // لینک‌سازی داخلی و خارجی
+  // لینک‌ها
   internal_links: number;
   external_links: number;
 
-  // قابلیت‌ها و پرچم‌های تکنیکال
+  // تکنیکال و اسکیما
   has_open_graph: boolean;
   open_graph_data?: Nullable<OpenGraphData>;
   has_structured_data: boolean;
@@ -113,6 +117,10 @@ export interface AuditResponse {
   is_wordpress: boolean;
   wp_version?: Nullable<string>;
 
-  // لیست کل تحلیل‌ها
+  // لیست چک‌ها
   checks: CheckItem[];
 }
+
+// الیاس‌ها جهت جلوگیری از شکستن بیلد در کامپوننت‌های قبلی
+export type CheckResult = CheckItem;
+export type AuditReport = AuditResponse;
