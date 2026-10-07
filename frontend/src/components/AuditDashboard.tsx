@@ -1,5 +1,14 @@
-"use client"; 
-import React, { useState, useMemo, useId, memo, useEffect, useRef, useCallback } from "react"; 
+"use client";
+
+import React, {
+  useState,
+  useMemo,
+  useId,
+  memo,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -21,34 +30,12 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils";
-import type { AuditReport, CheckResult, CheckStatus, CheckCategory } from "@/types/audit";
-
-interface AuditDashboardProps {
-  result: AuditReport;
-  className?: string;
-}
-interface StatusMeta {
-  icon: LucideIcon;
-  label: string;
-  badgeClass: string;
-  borderClass: string;
-  textClass: string;
-}
-const STATUS_CONFIG: Record<CheckStatus, StatusMeta> = {
-  fail: {
-    icon: XCircle,
-    label: "بحرانی",
-    badgeClass: "bg-destructive/10 text-destructive border-destructive/20",
-    borderClass: "border-s-destructive",
-    textClass: "text-destructive",
-  },
-  warning: {
-    icon: AlertTriangle,
-    label: "هشدار",
-    badgeide-react";
-import { cva } from "class-variance-authority";
-import { cn } from "@/lib/utils";
-import type { AuditReport, CheckResult, CheckStatus, CheckCategory } from "@/types/audit";
+import type {
+  AuditReport,
+  CheckResult,
+  CheckStatus,
+  CheckCategory,
+} from "@/types/audit";
 
 interface AuditDashboardProps {
   result: AuditReport;
@@ -74,7 +61,8 @@ const STATUS_CONFIG: Record<CheckStatus, StatusMeta> = {
   warning: {
     icon: AlertTriangle,
     label: "هشدار",
-    badgeClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+    badgeClass:
+      "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
     borderClass: "border-s-amber-500",
     textClass: "text-amber-500",
   },
@@ -88,25 +76,55 @@ const STATUS_CONFIG: Record<CheckStatus, StatusMeta> = {
   pass: {
     icon: CheckCircle2,
     label: "پاس‌شده",
-    badgeClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-    borderClass: "border-s-emerald-: STATUS_CONFIG.info.badgeClass,
+    badgeClass:
+      "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+    borderClass: "border-s-emerald-500",
+    textClass: "text-emerald-500",
+  },
+};
+
+const CATEGORY_LABELS: Record<CheckCategory | string, string> = {
+  technical: "سئوی تکنیکال",
+  indexing: "ایندکس‌پذیری و ربات‌ها",
+  structured_data: "داده‌های ساختاریافته (Schema)",
+  performance: "کارایی و سرعت",
+  wordpress: "سیگنال‌های وردپرس",
+  content: "محتوا و هدینگ‌ها",
+};
+
+const STATUS_SEVERITY_ORDER: Record<CheckStatus, number> = {
+  fail: 1,
+  warning: 2,
+  info: 3,
+  pass: 4,
+};
+
+const badgeVariants = cva(
+  "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border transition-colors",
+  {
+    variants: {
+      status: {
+        fail: STATUS_CONFIG.fail.badgeClass,
+        warning: STATUS_CONFIG.warning.badgeClass,
+        info: STATUS_CONFIG.info.badgeClass,
         pass: STATUS_CONFIG.pass.badgeClass,
       },
     },
-    defaultVariants: { status: "info" },
+    defaultVariants: {
+      status: "info",
+    },
   }
 );
 
-// تابع کمکی برای کپی پایدار متن
 async function copyToClipboard(text: string): Promise<boolean> {
   if (typeof window === "undefined") return false;
-  
+
   if (navigator.clipboard && window.isSecureContext) {
     try {
       await navigator.clipboard.writeText(text);
       return true;
     } catch {
-      // ادامه با متد fallback
+      // ادامه با فال‌بک
     }
   }
 
@@ -127,7 +145,6 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-// گیج امتیاز حلقه‌ای داینامیک
 const ScoreGauge = memo(function ScoreGauge({ score = 0 }: { score: number }) {
   const gradientId = useId();
   const safeScore = useMemo(() => {
@@ -188,13 +205,14 @@ const ScoreGauge = memo(function ScoreGauge({ score = 0 }: { score: number }) {
         <span className="text-3xl font-black tracking-tight tabular-nums text-foreground">
           {safeScore}
         </span>
-        <span className="text-[11px] font-medium text-muted-foreground">از ۱۰۰</span>
+        <span className="text-[11px] font-medium text-muted-foreground">
+          از ۱۰۰
+        </span>
       </div>
     </div>
   );
 });
 
-// کامپوننت کارت‌های خلاصه وضعیت
 const SummaryMetrics = memo(function SummaryMetrics({
   counts,
   activeFilter,
@@ -225,7 +243,9 @@ const SummaryMetrics = memo(function SummaryMetrics({
             )}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+              <span className="text-xs font-semibold text-muted-foreground">
+                {label}
+              </span>
               <Icon className={cn("size-4", textClass)} />
             </div>
             <div className="mt-2 flex items-baseline gap-1">
@@ -241,11 +261,10 @@ const SummaryMetrics = memo(function SummaryMetrics({
   );
 });
 
-// کامپوننت سطر ممیزی
 const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentId = useId();
 
   const meta = STATUS_CONFIG[check.status] ?? STATUS_CONFIG.info;
@@ -258,9 +277,9 @@ const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
   }, []);
 
   const handleCopy = useCallback(async () => {
-    const content = `[${meta.label}] ${check.name}\nدسته: ${
-      CATEGORY_LABELS[check.category] || check.category
-    }\nپیام: ${check.message}${
+    const categoryName =
+      (check.category && CATEGORY_LABELS[check.category]) || check.category || "";
+    const content = `[${meta.label}] ${check.name}\nدسته: ${categoryName}\nپیام: ${check.message}${
       check.recommendation ? `\nتوصیه فنی: ${check.recommendation}` : ""
     }`;
 
@@ -320,8 +339,14 @@ const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
               onClick={() => setIsOpen((prev) => !prev)}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline cursor-pointer"
             >
-              <span>{isOpen ? "بستن راهکار" : "نمایش دستورالعمل بهینه‌سازی"}</span>
-              {isOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+              <span>
+                {isOpen ? "بستن راهکار" : "نمایش دستورالعمل بهینه‌سازی"}
+              </span>
+              {isOpen ? (
+                <ChevronUp className="size-3.5" />
+              ) : (
+                <ChevronDown className="size-3.5" />
+              )}
             </button>
 
             {isOpen && (
@@ -337,7 +362,9 @@ const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
         )}
 
         <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
-          <span className="font-mono text-muted-foreground/80">شناسه: {check.id}</span>
+          <span className="font-mono text-muted-foreground/80">
+            شناسه: {check.id}
+          </span>
           <button
             type="button"
             onClick={handleCopy}
@@ -364,10 +391,17 @@ const CheckRow = memo(function CheckRow({ check }: { check: CheckResult }) {
 export function AuditDashboard({ result, className }: AuditDashboardProps) {
   const [filterStatus, setFilterStatus] = useState<CheckStatus | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortOrder, setSortOrder] = useState<"severity" | "alphabet">("severity");
+  const [sortOrder, setSortOrder] = useState<"severity" | "alphabet">(
+    "severity"
+  );
 
   const counts = useMemo(() => {
-    const acc: Record<CheckStatus, number> = { fail: 0, warning: 0, info: 0, pass: 0 };
+    const acc: Record<CheckStatus, number> = {
+      fail: 0,
+      warning: 0,
+      info: 0,
+      pass: 0,
+    };
     if (!result?.checks) return acc;
     for (const c of result.checks) {
       if (acc[c.status] !== undefined) acc[c.status] += 1;
@@ -379,13 +413,17 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
     if (!result?.checks) return [];
     return result.checks
       .filter((check) => {
-        const matchesStatus = filterStatus === "all" || check.status === filterStatus;
+        const matchesStatus =
+          filterStatus === "all" || check.status === filterStatus;
         const query = searchQuery.trim().toLowerCase();
         const matchesSearch =
           query === "" ||
           check.name.toLowerCase().includes(query) ||
           check.message.toLowerCase().includes(query) ||
-          Boolean(check.recommendation && check.recommendation.toLowerCase().includes(query));
+          Boolean(
+            check.recommendation &&
+              check.recommendation.toLowerCase().includes(query)
+          );
 
         return matchesStatus && matchesSearch;
       })
@@ -417,15 +455,21 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl border border-dashed border-border bg-card">
         <Layers className="size-12 text-muted-foreground/50 mb-4 animate-pulse" />
-        <h3 className="text-base font-bold text-foreground">داده‌ای برای نمایش وجود ندارد</h3>
-        <p className="text-sm text-muted-foreground mt-1">هیچ آزمونی در خروجی پاسخ یافت نشد.</p>
+        <h3 className="text-base font-bold text-foreground">
+          داده‌ای برای نمایش وجود ندارد
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          هیچ آزمونی در خروجی پاسخ یافت نشد.
+        </p>
       </div>
     );
   }
 
   return (
-    <section dir="rtl" className={cn("w-full max-w-5xl mx-auto space-y-6 text-start", className)}>
-      {/* هدر بالایی و متادیتاها */}
+    <section
+      dir="rtl"
+      className={cn("w-full max-w-5xl mx-auto space-y-6 text-start", className)}
+    >
       <div className="p-6 sm:p-8 rounded-2xl border border-border bg-card text-card-foreground shadow-sm">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="space-y-3 w-full sm:w-auto">
@@ -435,7 +479,9 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
             </div>
 
             <div className="space-y-1">
-              <h1 className="text-2xl font-black text-foreground">گزارش ممیزی سورس</h1>
+              <h1 className="text-2xl font-black text-foreground">
+                گزارش ممیزی سورس
+              </h1>
               <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground pt-1">
                 <span className="flex items-center gap-1 font-mono" dir="ltr">
                   <ExternalLink className="size-3" />
@@ -458,14 +504,12 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
         </div>
       </div>
 
-      {/* خلاصه وضعیت */}
       <SummaryMetrics
         counts={counts}
         activeFilter={filterStatus}
         onSelectFilter={setFilterStatus}
       />
 
-      {/* ابزارهای فیلتر و جستجو */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 bg-card rounded-xl border border-border">
         <div className="relative flex-1">
           <Search className="absolute inset-y-0 start-3 my-auto size-4 text-muted-foreground" />
@@ -487,7 +531,9 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
           <button
             type="button"
             onClick={() =>
-              setSortOrder((prev) => (prev === "severity" ? "alphabet" : "severity"))
+              setSortOrder((prev) =>
+                prev === "severity" ? "alphabet" : "severity"
+              )
             }
             className="inline-flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-medium rounded-lg border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
           >
@@ -507,10 +553,11 @@ export function AuditDashboard({ result, className }: AuditDashboardProps) {
         </div>
       </div>
 
-      {/* لیست تست‌ها */}
       <div className="space-y-3">
         {filteredChecks.length > 0 ? (
-          filteredChecks.map((check) => <CheckRow key={check.id} check={check} />)
+          filteredChecks.map((check) => (
+            <CheckRow key={check.id} check={check} />
+          ))
         ) : (
           <div className="p-8 text-center rounded-xl border border-border bg-card text-sm text-muted-foreground">
             هیچ آزمونی مطابق با فیلتر یا عبارت جستجوی وارد شده پیدا نشد.
