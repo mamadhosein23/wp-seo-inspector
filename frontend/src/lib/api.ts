@@ -1,17 +1,20 @@
-// frontend/src/lib/api.ts
 import type { AuditResponse } from "@/types/audit";
 
-// پشتیبانی استاندارد از Next.js با fallback به Vite و لوکال
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ??
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
   "http://127.0.0.1:8000";
 
 const AUDIT_ENDPOINT = `${API_BASE_URL}/api/audit`;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+export interface ValidationErrorItem {
+  loc: (string | number)[];
+  msg: string;
+  type?: string;
+}
+
 export interface ApiErrorResponse {
-  detail?: string | { msg: string; loc: string[] }[];
+  detail?: string | ValidationErrorItem[];
   message?: string;
   error?: string;
 }
@@ -41,7 +44,7 @@ export class ApiError extends Error {
 }
 
 /**
- * استخراج و فرمت‌بندی خطاهای سرور (به‌ویژه خطاهای ولیدیشن Pydantic/FastAPI)
+ * فرمت‌بندی خطاهای اعتبارسنجی 422 در Pydantic/FastAPI
  */
 function extractErrorMessage(
   errorData: ApiErrorResponse | unknown,
@@ -52,8 +55,9 @@ function extractErrorMessage(
 
     if (typeof data.detail === "string") return data.detail;
     if (Array.isArray(data.detail) && data.detail.length > 0) {
-      // فرمت ارورهای اعتبارسنجی 422 در FastAPI
-      return data.detail.map((err) => `${err.loc.join(".")}: ${err.msg}`).join(" | ");
+      return data.detail
+        .map((err) => `${err.loc.filter((l) => l !== "body").join(".")}: ${err.msg}`)
+        .join(" | ");
     }
     if (typeof data.message === "string") return data.message;
     if (typeof data.error === "string") return data.error;
@@ -86,26 +90,12 @@ export const performAudit = async (
   }
 
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const internalController = new AbortController();
-  let isTimedOut = false;
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
 
-  const timeoutId = setTimeout(() => {
-    isTimedOut = true;
-    internalController.abort();
-  }, timeoutMs);
-
-  // لیسنر برای لغو دستی کاربر از بیرون
-  const handleExternalAbort = () => {
-    internalController.abort();
-  };
-
-  if (options?.signal) {
-    if (options.signal.aborted) {
-      clearTimeout(timeoutId);
-      throw new DOMException("Aborted", "AbortError");
-    }
-    options.signal.addEventListener("abort", handleExternalAbort, { once: true });
-  }
+  // ترکیب سیگنال ابورت کاربر با سیگنال تایم‌اوت به روش مدرن
+  const combinedSignal = options?.signal
+    ? AbortSignal.any([options.signal, timeoutSignal])
+    : timeoutSignal;
 
   try {
     const response = await fetch(AUDIT_ENDPOINT, {
@@ -115,7 +105,7 @@ export const performAudit = async (
         Accept: "application/json",
       },
       body: JSON.stringify({ url: trimmedUrl }),
-      signal: internalController.signal,
+      signal: combinedSignal,
     });
 
     if (!response.ok) {
@@ -134,29 +124,27 @@ export const performAudit = async (
     const data = await parseJsonSafely<AuditResponse>(response);
 
     if (!data) {
-      throw new Error("دیتای بازگشتی از سرور نامعتبر است و قابل پارس نیست.");
+      throw new Error("پاسخ دریافتی از سرور معتبر یا در قالب JSON نیست.");
     }
 
     return data;
   } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new Error(
+        `مهلت پردازش به پایان رسید (بیش از ${timeoutMs / 1000} ثانیه). سرور یا دامنه مقصد پاسخگو نیست.`
+      );
+    }
+
     if (error instanceof DOMException && error.name === "AbortError") {
-      if (isTimedOut) {
-        throw new Error(`زمان پردازش به پایان رسید (بیش از ${timeoutMs / 1000} ثانیه). سرور یا دامنه مقصد پاسخگو نیست.`);
-      }
-      throw error; // خطای لغو دستی برای کامپوننت فرستاده شود تا UI الکی پیام ارور ندهد
+      throw error; // لغو دستی توسط کاربر
     }
 
     if (error instanceof TypeError) {
       throw new Error(
-        "عدم برقراری ارتباط با سرور بک‌اند. وضعیت اجرای سرویس FastAPI و تنظیمات CORS را بررسی کنید."
+        "عدم برقراری ارتباط با سرور بک‌اند. وضعیت سرویس FastAPI و تنظیمات CORS را بررسی کنید."
       );
     }
 
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
-    if (options?.signal) {
-      options.signal.removeEventListener("abort", handleExternalAbort);
-    }
   }
 };
