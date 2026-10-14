@@ -1,12 +1,8 @@
-"""WP SEO Inspector — Hardened HTTP Fetcher.
-
-SSRF & DNS-Rebinding protected asynchronous crawler using Custom Async Transport.
-"""
-
 from __future__ import annotations
 
 import asyncio
 import ipaddress
+import re
 import socket
 import time
 from dataclasses import dataclass, field
@@ -15,20 +11,20 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.security import (
-    InvalidTargetURLError,
-    PayloadTooLargeError,
-    SSRFDetectedError,
-)
+from app.security import InvalidTargetURLError, PayloadTooLargeError, SSRFDetectedError
 
-MAX_CONTENT_BYTES: Final[int] = 5 * 1024 * 1024  # 5 MB Cap
+MAX_CONTENT_BYTES: Final[int] = 5 * 1024 * 1024  # 5 MB
 DEFAULT_TIMEOUT_SEC: Final[float] = 8.0
 MAX_REDIRECTS: Final[int] = 5
+
+# Allow only HTML-ish types
+_HTML_MIME_RE: Final[re.Pattern[str]] = re.compile(
+    r"^\s*(text/html|application/xhtml\+xml)\b", re.IGNORECASE
+)
 
 
 @dataclass(slots=True)
 class FetchResult:
-    """Consolidated network response for DOM analysis and SEO scoring."""
     html: str
     final_url: str
     status_code: int
@@ -37,11 +33,24 @@ class FetchResult:
     redirect_history: list[str] = field(default_factory=list)
 
 
+def _is_special_use_ipv4(ip: ipaddress.IPv4Address) -> bool:
+    # RFC 6598 CGNAT, RFC 2544 benchmarking, TEST-NETs
+    special_nets = [
+        ipaddress.ip_network("100.64.0.0/10"),
+        ipaddress.ip_network("198.18.0.0/15"),
+        ipaddress.ip_network("192.0.2.0/24"),
+        ipaddress.ip_network("198.51.100.0/24"),
+        ipaddress.ip_network("203.0.113.0/24"),
+    ]
+    return any(ip in net for net in special_nets)
+
+
 def is_ip_safe(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Verifies that an IP does not belong to loopback, private or link-local subnets."""
-    # Convert IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) to standard IPv4
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
+
+    if isinstance(ip, ipaddress.IPv4Address) and _is_special_use_ipv4(ip):
+        return False
 
     return not (
         ip.is_private
@@ -54,14 +63,11 @@ def is_ip_safe(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 
 class SSRFSafeTransport(httpx.AsyncHTTPTransport):
-    """Custom Async Transport enforcing IP validation on raw socket connections."""
-
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         url = request.url
         hostname = url.host
         port = url.port or (443 if url.scheme == "https" else 80)
 
-        # 1. Non-blocking asynchronous DNS lookup
         loop = asyncio.get_running_loop()
         try:
             addr_info = await loop.getaddrinfo(
@@ -71,33 +77,31 @@ class SSRFSafeTransport(httpx.AsyncHTTPTransport):
                 type=socket.SOCK_STREAM,
             )
         except socket.gaierror as err:
-            raise InvalidTargetURLError(f"DNS resolution failed for '{hostname}': {err}") from err
+            raise InvalidTargetURLError(
+                f"DNS resolution failed for '{hostname}': {err}"
+            ) from err
 
-        # 2. Extract and validate all resolved IP addresses
-        resolved_ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+        resolved: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
         for item in addr_info:
             raw_ip = item[4][0]
             try:
-                ip_obj = ipaddress.ip_address(raw_ip)
-                resolved_ips.append(ip_obj)
-            except ValueError:
-                raise SSRFDetectedError(f"Malformed IP returned by DNS: {raw_ip}")
+                resolved.append(ipaddress.ip_address(raw_ip))
+            except ValueError as err:
+                raise SSRFDetectedError(f"Malformed IP returned by DNS: {raw_ip}") from err
 
-        if not resolved_ips:
+        if not resolved:
             raise InvalidTargetURLError(f"Hostname '{hostname}' resolved to no records.")
 
-        for ip in resolved_ips:
+        for ip in resolved:
             if not is_ip_safe(ip):
                 raise SSRFDetectedError(
-                    f"Forbidden connection target: Hostname '{hostname}' points to restricted IP: {ip}"
+                    f"Forbidden connection target: '{hostname}' resolved to restricted IP: {ip}"
                 )
 
         return await super().handle_async_request(request)
 
 
 class SafeAsyncCrawler:
-    """High-performance crawler supporting connection-pooling and SSRF hardening."""
-
     def __init__(
         self,
         timeout_sec: float = DEFAULT_TIMEOUT_SEC,
@@ -106,42 +110,51 @@ class SafeAsyncCrawler:
         self.timeout_sec = timeout_sec
         self.headers = {
             "User-Agent": user_agent,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
+            "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
+            "Accept-Encoding": "gzip, deflate",
         }
         self._transport = SSRFSafeTransport(verify=True)
         self._client: httpx.AsyncClient | None = None
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
+            timeout = httpx.Timeout(
+                timeout=self.timeout_sec,
+                connect=4.0,
+                read=self.timeout_sec,
+                write=self.timeout_sec,
+                pool=2.0,
+            )
+            limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
             self._client = httpx.AsyncClient(
                 transport=self._transport,
-                timeout=httpx.Timeout(self.timeout_sec, connect=4.0),
-                follow_redirects=False,  # Redirects handled manually to enforce hop-by-hop validation
+                timeout=timeout,
+                limits=limits,
+                follow_redirects=False,
                 headers=self.headers,
                 http2=False,
             )
         return self._client
 
     async def close(self) -> None:
-        """Closes connection pools gracefully on application teardown."""
         if self._client and not self._client.is_closed:
             await self._client.aclose()
 
     def _validate_initial_url(self, url: str) -> None:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
-            raise InvalidTargetURLError(f"Unsupported protocol scheme '{parsed.scheme}'. Only HTTP/HTTPS permitted.")
+            raise InvalidTargetURLError(
+                f"Unsupported protocol scheme '{parsed.scheme}'. Only HTTP/HTTPS permitted."
+            )
         if not parsed.hostname:
             raise InvalidTargetURLError("Missing host component in target URL.")
 
     async def fetch(self, url: str) -> FetchResult:
-        """Executes secure, streamed crawl with fail-fast byte limits and manual redirect tracing."""
         self._validate_initial_url(url)
         client = self._get_client()
 
         current_url = url
-        redirect_chain: list[str] = []
+        redirect_chain: list[str] = [url]
         start_time = time.perf_counter()
 
         for _ in range(MAX_REDIRECTS + 1):
@@ -155,9 +168,7 @@ class SafeAsyncCrawler:
             except httpx.HTTPError as exc:
                 raise ConnectionError(f"HTTP network failure on {current_url}: {exc}") from exc
 
-            # Redirect handling (Manual hop validation)
             if response.is_redirect:
-                redirect_chain.append(current_url)
                 location = response.headers.get("Location")
                 await response.aclose()
 
@@ -166,28 +177,29 @@ class SafeAsyncCrawler:
 
                 current_url = str(response.url.join(location))
                 self._validate_initial_url(current_url)
+                redirect_chain.append(current_url)
                 continue
 
-            # Read Body with Strict 5MB Cap
-            content_type = response.headers.get("Content-Type", "").lower()
-            collected_chunks: list[bytes] = []
-            total_bytes = 0
+            content_type = response.headers.get("Content-Type", "")
+            if not _HTML_MIME_RE.match(content_type):
+                await response.aclose()
+                raise InvalidTargetURLError(
+                    f"Unsupported Content-Type '{content_type}'. Only HTML is allowed."
+                )
 
+            buf = bytearray()
             try:
                 async for chunk in response.aiter_bytes():
-                    total_bytes += len(chunk)
-                    if total_bytes > MAX_CONTENT_BYTES:
+                    buf.extend(chunk)
+                    if len(buf) > MAX_CONTENT_BYTES:
                         raise PayloadTooLargeError(
                             f"Response entity exceeded maximum allowable limit ({MAX_CONTENT_BYTES} bytes)."
                         )
-                    collected_chunks.append(chunk)
             finally:
                 await response.aclose()
 
-            raw_bytes = b"".join(collected_chunks)
             encoding = response.encoding or "utf-8"
-            html_text = raw_bytes.decode(encoding, errors="replace")
-
+            html_text = bytes(buf).decode(encoding, errors="replace")
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 
             return FetchResult(
@@ -195,8 +207,8 @@ class SafeAsyncCrawler:
                 final_url=str(response.url),
                 status_code=response.status_code,
                 response_time_ms=elapsed_ms,
-                content_type=content_type,
-                redirect_history=redirect_chain,
+                content_type=content_type.lower(),
+                redirect_history=redirect_chain[:-1], 
             )
 
         raise InvalidTargetURLError(f"Exceeded maximum redirect depth of {MAX_REDIRECTS} hops.")
