@@ -57,29 +57,39 @@
 }
 
 @keyframes shimmer {
-  from { background-position: 0 0; }
-  to { background-position: -200% 0; }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 @layer components {
-  /* کارت گلس‌مورفیک داینامیک و هماهنگ با تم */
+  /* Dynamic glassmorphic card component */
   .card-pro {
     @apply relative overflow-hidden rounded-2xl border border-border/60 bg-card/60 p-6 
       shadow-sm backdrop-blur-xl transition-all duration-300
       hover:-translate-y-1 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/5;
   }
 
-  /* دکمه شیمر هماهنگ با تم لایت و دارک */
+  /* GPU-accelerated shimmer button */
   .btn-shimmer {
-    animation: shimmer 2.5s linear infinite;
-    background-size: 200% 100%;
-    @apply relative inline-flex h-11 items-center justify-center rounded-xl 
-      border border-border bg-[linear-gradient(110deg,hsl(var(--card)),45%,hsl(var(--muted)),55%,hsl(var(--card)))] 
-      px-6 font-medium text-foreground transition-all 
+    @apply relative inline-flex h-11 items-center justify-center overflow-hidden rounded-xl 
+      border border-border bg-card px-6 font-medium text-foreground transition-all 
       hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
   }
 
-  /* دکمه نئونی با ترنزیشن بهینه‌شده */
+  .btn-shimmer::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--muted) / 0.8),
+      transparent
+    );
+    animation: shimmer 2s infinite;
+  }
+
+  /* Neon CTA button with micro-interactions */
   .btn-neon {
     @apply relative inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 
       text-sm font-semibold text-primary-foreground shadow-[0_0_15px_hsl(var(--primary)/0.35)] 
@@ -87,13 +97,15 @@
       hover:scale-[1.02] hover:shadow-[0_0_25px_hsl(var(--primary)/0.6)] active:scale-[0.98];
   }
 
-  /* نشانگر راداری */
+  /* Pulse status radar indicator */
   .status-radar {
     @apply relative flex h-2.5 w-2.5;
   }
+  
   .status-radar span:first-child {
     @apply absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75;
   }
+  
   .status-radar span:last-child {
     @apply relative inline-flex h-2.5 w-2.5 rounded-full bg-success;
   }
