@@ -34,8 +34,9 @@ export default function UrlForm({
   const [localError, setLocalError] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // لود تاریخچه از لوکال استوریج با حفاظت SSR
+  // Synchronize history from localStorage with SSR fallback
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -48,11 +49,11 @@ export default function UrlForm({
         }
       }
     } catch {
-      // حالت‌های پرایوت یا دسترسی مسدود
+      // Storage access might be restricted in private browsing mode
     }
   }, []);
 
-  // بستن لیست تاریخچه هنگام کلیک خارج از المان
+  // Dismiss dropdown on outside clicks
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (
@@ -66,6 +67,15 @@ export default function UrlForm({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Cancel any pending fetch on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const saveToHistory = useCallback((newUrl: string) => {
     setRecentUrls((prev) => {
       const filtered = prev.filter((item) => item !== newUrl);
@@ -73,7 +83,7 @@ export default function UrlForm({
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       } catch {
-        // جلوگیری از کرش در پرایوت سافاری
+        // Prevent throwing errors when storage quota is exceeded
       }
       return updated;
     });
@@ -92,30 +102,43 @@ export default function UrlForm({
       return;
     }
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLocalError(null);
     setIsLoading(true);
     setShowHistory(false);
     onAuditStart();
 
     try {
-      // فراخوانی اندپوینت FastAPI
       const res = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: cleanUrl }),
+        signal: controller.signal,
       });
 
-      const data = await res.json();
+      let data: any = null;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      }
 
       if (!res.ok) {
-        throw new Error(data?.detail || "خطا در واکشی اطلاعات از سرور.");
+        throw new Error(data?.detail || `خطای سرور با وضعیت ${res.status}`);
       }
 
       saveToHistory(cleanUrl);
-      onAuditComplete(data);
+      onAuditComplete(data as AuditResponse);
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
       const msg =
-        err instanceof Error ? err.message : "خطای نامشخصی در اتصال رخ داد.";
+        err instanceof Error ? err.message : "خطای نامشخصی در برقراری ارتباط رخ داد.";
       onError(msg);
     } finally {
       setIsLoading(false);
@@ -140,6 +163,8 @@ export default function UrlForm({
             dir="ltr"
             value={url}
             disabled={isLoading}
+            aria-label="URL to audit"
+            aria-expanded={showHistory && recentUrls.length > 0}
             onFocus={() => recentUrls.length > 0 && setShowHistory(true)}
             onChange={(e) => {
               setUrl(e.target.value);
@@ -169,17 +194,22 @@ export default function UrlForm({
         </div>
       </form>
 
-      {/* خطای کلاینت‌ساید فرم */}
       {localError && (
-        <div className="mt-2 flex items-center gap-2 text-xs text-destructive">
+        <div
+          role="alert"
+          className="mt-2 flex items-center gap-2 text-xs text-destructive"
+        >
           <AlertCircle className="size-3.5 shrink-0" />
           <span>{localError}</span>
         </div>
       )}
 
-      {/* منوی بازشوی تاریخچه */}
       {showHistory && recentUrls.length > 0 && (
-        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg backdrop-blur-xl">
+        <div
+          role="region"
+          aria-label="Recent audit URLs"
+          className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg backdrop-blur-xl"
+        >
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 text-xs font-semibold text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <History className="size-3.5" />
@@ -197,9 +227,9 @@ export default function UrlForm({
               پاک کردن تاریخچه
             </button>
           </div>
-          <ul className="divide-y divide-border/40">
+          <ul role="listbox" className="divide-y divide-border/40">
             {recentUrls.map((item) => (
-              <li key={item}>
+              <li key={item} role="option" aria-selected={false}>
                 <button
                   type="button"
                   dir="ltr"
