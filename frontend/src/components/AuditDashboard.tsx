@@ -124,7 +124,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text);
       return true;
     } catch {
-      // ادامه با فال‌بک
+      // Fallback to execCommand if API fails
     }
   }
 
@@ -134,6 +134,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
     textArea.style.position = "fixed";
     textArea.style.opacity = "0";
     textArea.style.left = "-999999px";
+    textArea.setAttribute("aria-hidden", "true");
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
@@ -160,9 +161,9 @@ const ScoreGauge = memo(function ScoreGauge({ score = 0 }: { score: number }) {
   const offset = circumference * (1 - safeScore / 100);
 
   const strokeColor = useMemo(() => {
-    if (safeScore >= 85) return "hsl(var(--success, 142 71% 45%))";
-    if (safeScore >= 50) return "hsl(var(--warning, 38 92% 50%))";
-    return "hsl(var(--destructive, 0 84% 60%))";
+    if (safeScore >= 85) return "hsl(var(--success))";
+    if (safeScore >= 50) return "hsl(38 92% 50%)";
+    return "hsl(var(--destructive))";
   }, [safeScore]);
 
   return (
