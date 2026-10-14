@@ -14,7 +14,7 @@ export type CheckCategory = (typeof CHECK_CATEGORIES)[number];
 export type Nullable<T> = T | null;
 
 /**
- * کلیدهای ممیزی به همراه پشتیبانی اتوکامپلیت برای کلیدهای کاستوم
+ * Standard audit check keys with autocomplete support for arbitrary custom keys.
  */
 export type KnownAuditCheckKey =
   | "http_status"
@@ -47,23 +47,22 @@ export type SeoCheckValue =
   | unknown[];
 
 /**
- * ساختار هر چک آیتم (همگام با نیازهای UI و Pydantic)
+ * Individual audit check representation matching FastAPI Pydantic schema and UI contract.
  */
 export interface CheckItem {
-  id?: string;
+  id: string;
   key: AuditCheckKey;
-  label: string; // نام نمایشی چک
-  title?: string; // سازگاری با داشبورد قبلی
+  title: string;
   category: CheckCategory;
   status: CheckStatus;
   value: SeoCheckValue;
   message: string;
   recommendation: Nullable<string>;
-  score_impact?: number;
+  score_impact: number;
 }
 
 /**
- * متاتگ‌های Open Graph
+ * Open Graph metadata container.
  */
 export interface OpenGraphData {
   title?: Nullable<string>;
@@ -75,52 +74,63 @@ export interface OpenGraphData {
 }
 
 /**
- * ریسپانس کلی موتور ممیزی سئو (FastAPI Response Schema)
+ * Summary metrics of checks grouped by resolution status.
+ */
+export interface AuditSummary {
+  total: number;
+  passed: number;
+  warnings: number;
+  errors: number;
+  info: number;
+}
+
+/**
+ * Complete audit report payload returned by the FastAPI engine.
  */
 export interface AuditResponse {
-  id?: string;
+  id: string;
   url: string;
   final_url: string;
-  audit_timestamp?: string | number;
-  score: number; // 0 - 100
+  audit_timestamp: string; // ISO 8601 string representation
+  score: number; // Normalized range: 0 - 100
 
-  // سرور و وضعیت HTTP
+  // Server & HTTP transport
   http_status_code: number;
   response_time_ms: number;
   content_type: string;
   server_header?: Nullable<string>;
 
-  // متاتگ‌ها و ایندکس‌پذیری
+  // Metadata & indexing directives
   title: Nullable<string>;
   meta_description: Nullable<string>;
   canonical: Nullable<string>;
   robots_meta: Nullable<string>;
 
-  // ساختار محتوا
+  // Document hierarchy & content metrics
   h1_count: number;
   h2_count: number;
   word_count: number;
 
-  // تصاویر
+  // Asset validation
   total_images: number;
   images_without_alt: number;
 
-  // لینک‌ها
+  // Link profiling
   internal_links: number;
   external_links: number;
 
-  // تکنیکال و اسکیما
+  // Technical, schema & CMS footprint
   has_open_graph: boolean;
   open_graph_data?: Nullable<OpenGraphData>;
   has_structured_data: boolean;
-  structured_data_types?: string[];
+  structured_data_types: string[];
   is_wordpress: boolean;
   wp_version?: Nullable<string>;
 
-  // لیست چک‌ها
+  // Evaluated check collection
   checks: CheckItem[];
 }
 
-// الیاس‌ها جهت جلوگیری از شکستن بیلد در کامپوننت‌های قبلی
+// Backward compatibility aliases
 export type CheckResult = CheckItem;
 export type AuditReport = AuditResponse;
