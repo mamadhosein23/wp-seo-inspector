@@ -7,6 +7,7 @@ import {
   RefreshCcw,
   Sparkles,
   Terminal,
+  XCircle,
 } from "lucide-react";
 import AuditDashboard from "@/components/AuditDashboard";
 import UrlForm from "@/components/UrlForm";
@@ -37,6 +38,10 @@ export default function Home() {
     setState({ status: "error", data: null, error: message });
   }, []);
 
+  const handleReset = useCallback(() => {
+    setState({ status: "idle", data: null, error: null });
+  }, []);
+
   const isLoading = state.status === "loading";
   const isError = state.status === "error";
   const isSuccess = state.status === "success" && state.data !== null;
@@ -48,7 +53,7 @@ export default function Home() {
       className="min-h-screen bg-gradient-to-b from-background via-background to-secondary/20 px-4 py-12 sm:px-6 lg:px-8"
     >
       <div className="mx-auto max-w-5xl space-y-10">
-        {/* Header */}
+        {/* Header section */}
         <header className="space-y-4 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
             <Sparkles aria-hidden="true" className="size-3.5" />
@@ -66,7 +71,7 @@ export default function Home() {
           </p>
         </header>
 
-        {/* Input Form */}
+        {/* Audit trigger form */}
         <section aria-label="فرم شروع تحلیل" className="relative z-10">
           <UrlForm
             onAuditStart={handleAuditStart}
@@ -75,13 +80,13 @@ export default function Home() {
           />
         </section>
 
-        {/* Dynamic Status / Alerts */}
+        {/* Live status announcements and loading/error states */}
         <div aria-atomic="true" aria-live="polite">
           {isLoading && (
             <section
               aria-busy="true"
               aria-label="تحلیل در حال اجرا"
-              className="mx-auto max-w-2xl space-y-4 rounded-2xl border bg-card p-8 text-center text-card-foreground shadow-sm"
+              className="card-pro mx-auto max-w-2xl space-y-4 text-center"
             >
               <div className="flex justify-center">
                 <div className="rounded-full bg-primary/10 p-3 text-primary">
@@ -118,39 +123,50 @@ export default function Home() {
               role="alert"
               className="mx-auto max-w-3xl rounded-2xl border border-destructive/30 bg-destructive/10 p-5 shadow-sm"
             >
-              <div className="flex items-start gap-3">
-                <AlertCircle
-                  aria-hidden="true"
-                  className="mt-0.5 size-5 shrink-0 text-destructive"
-                />
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <AlertCircle
+                    aria-hidden="true"
+                    className="mt-0.5 size-5 shrink-0 text-destructive"
+                  />
 
-                <div className="space-y-1 text-start text-sm">
-                  <p className="font-bold text-destructive">
-                    خطا در اجرای تحلیل
-                  </p>
-                  <p className="whitespace-pre-wrap break-words leading-relaxed text-foreground">
-                    {state.error}
-                  </p>
+                  <div className="space-y-1 text-start text-sm">
+                    <p className="font-bold text-destructive">
+                      خطا در اجرای تحلیل
+                    </p>
+                    <p className="whitespace-pre-wrap break-words leading-relaxed text-foreground">
+                      {state.error}
+                    </p>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="rounded-lg p-1 text-destructive/80 transition-colors hover:bg-destructive/20 hover:text-destructive"
+                  aria-label="بستن پیام خطا"
+                >
+                  <XCircle className="size-5" />
+                </button>
               </div>
             </section>
           )}
         </div>
 
-        {/* Results */}
+        {/* Dashboard report display */}
         {isSuccess && state.data && (
           <section aria-label="نتیجه تحلیل سئو" className="pt-4">
             <AuditDashboard result={state.data} />
           </section>
         )}
 
-        {/* Feature Cards (Only on Idle) */}
+        {/* Introductory feature cards shown only in idle state */}
         {isIdle && (
           <section
             aria-label="قابلیت‌های سامانه"
             className="grid grid-cols-1 gap-4 border-t border-border/50 pt-10 md:grid-cols-3"
           >
-            <article className="space-y-2 rounded-xl border bg-card/50 p-4 text-start">
+            <article className="card-pro space-y-2 p-5 text-start">
               <div className="w-fit rounded-lg bg-blue-500/10 p-2 text-blue-500">
                 <Terminal aria-hidden="true" className="size-4" />
               </div>
@@ -163,7 +179,7 @@ export default function Home() {
               </p>
             </article>
 
-            <article className="space-y-2 rounded-xl border bg-card/50 p-4 text-start">
+            <article className="card-pro space-y-2 p-5 text-start">
               <div className="w-fit rounded-lg bg-emerald-500/10 p-2 text-emerald-500">
                 <Layers aria-hidden="true" className="size-4" />
               </div>
@@ -176,7 +192,7 @@ export default function Home() {
               </p>
             </article>
 
-            <article className="space-y-2 rounded-xl border bg-card/50 p-4 text-start">
+            <article className="card-pro space-y-2 p-5 text-start">
               <div className="w-fit rounded-lg bg-amber-500/10 p-2 text-amber-500">
                 <Sparkles aria-hidden="true" className="size-4" />
               </div>
