@@ -6,6 +6,7 @@ streaming payload limits, and latency profiling.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from typing import Final
@@ -39,6 +40,14 @@ DEFAULT_HEADERS: Final[dict[str, str]] = {
     "Pragma": "no-cache",
 }
 
+_HTML_MIME_RE: Final[re.Pattern[str]] = re.compile(r"^(text/html|application/xhtml\+xml)\b", re.I)
+_CHARSET_RE: Final[re.Pattern[str]] = re.compile(r"charset=([^\s;]+)", re.I)
+
+
+def _extract_charset(content_type: str) -> str | None:
+    m = _CHARSET_RE.search(content_type or "")
+    return m.group(1).strip("'\"") if m else None
+
 
 @dataclass(slots=True, frozen=True)
 class FetchResult:
@@ -62,10 +71,13 @@ class SafeAsyncCrawler:
         max_payload_size: int = MAX_PAYLOAD_BYTES,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         max_redirects: int = MAX_REDIRECTS,
+        require_html: bool = True,
     ) -> None:
         self.max_payload_size = max_payload_size
         self.max_redirects = max_redirects
-        self.timeout = httpx.Timeout(timeout, connect=5.0, read=timeout, write=5.0)
+        self.require_html = require_html
+
+        self.timeout = httpx.Timeout(timeout, connect=5.0, read=timeout, write=5.0, pool=5.0)
         self.transport = DNSRebindingTransport()
         self._client: httpx.AsyncClient | None = None
 
@@ -81,14 +93,18 @@ class SafeAsyncCrawler:
         return self._client
 
     async def close(self) -> None:
-        """Closes the underlying HTTP client session."""
         if self._client is not None and not self._client.is_closed:
             await self._client.aclose()
 
     async def __aenter__(self) -> SafeAsyncCrawler:
         return self
 
-    async def __aexit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
         await self.close()
 
     async def fetch(self, raw_url: str) -> FetchResult:
@@ -105,7 +121,8 @@ class SafeAsyncCrawler:
         start_time = time.perf_counter()
 
         while hops <= self.max_redirects:
-            validate_target_url(current_url)
+            # Validate every hop (SSRF rules + allowed schemes + host, etc.)
+            current_url = validate_target_url(current_url)
 
             try:
                 request = client.build_request("GET", current_url)
@@ -113,7 +130,6 @@ class SafeAsyncCrawler:
             except httpx.RequestError as exc:
                 raise InvalidTargetURLError(f"Connection failed to {current_url}: {exc}") from exc
 
-            # Manually trace redirects to validate intermediate IPs against SSRF
             if response.is_redirect:
                 redirect_chain.append(current_url)
                 location = response.headers.get("Location")
@@ -122,23 +138,28 @@ class SafeAsyncCrawler:
                 if not location:
                     raise InvalidTargetURLError("Redirect response missing 'Location' header.")
 
+                # Join relative redirects safely and validate next hop at loop start
                 current_url = str(response.url.join(location))
                 hops += 1
                 continue
 
-            # Fail-fast on Content-Length header before consuming stream
+            # Header-based payload cap
             content_length = response.headers.get("Content-Length")
-            if content_length and content_length.isdigit():
-                if int(content_length) > self.max_payload_size:
-                    await response.aclose()
-                    raise PayloadTooLargeError(
-                        f"Response header exceeded {self.max_payload_size // (1024 * 1024)}MB cap."
-                    )
+            if content_length and content_length.isdigit() and int(content_length) > self.max_payload_size:
+                await response.aclose()
+                raise PayloadTooLargeError(
+                    f"Response header exceeded {self.max_payload_size // (1024 * 1024)}MB cap."
+                )
 
             content_type = response.headers.get("Content-Type", "").lower()
-            body_chunks: list[bytes] = []
-            bytes_received = 0
 
+            if self.require_html and not _HTML_MIME_RE.match(content_type or ""):
+                await response.aclose()
+                raise InvalidTargetURLError(f"Non-HTML response blocked. Content-Type={content_type!r}")
+
+            # Stream into bytearray (less RAM overhead than list-of-chunks + join)
+            buf = bytearray()
+            bytes_received = 0
             try:
                 async for chunk in response.aiter_bytes():
                     bytes_received += len(chunk)
@@ -146,13 +167,13 @@ class SafeAsyncCrawler:
                         raise PayloadTooLargeError(
                             f"Response stream exceeded {self.max_payload_size // (1024 * 1024)}MB cap."
                         )
-                    body_chunks.append(chunk)
+                    buf.extend(chunk)
             finally:
                 await response.aclose()
 
-            raw_bytes = b"".join(body_chunks)
-            encoding = response.encoding or "utf-8"
-            html = raw_bytes.decode(encoding, errors="replace")
+            # Decode strategy
+            charset = _extract_charset(content_type) or response.encoding or "utf-8"
+            html = bytes(buf).decode(charset, errors="replace")
 
             latency = round((time.perf_counter() - start_time) * 1000, 2)
 
@@ -167,7 +188,7 @@ class SafeAsyncCrawler:
                 redirect_history=redirect_chain,
             )
 
-        raise SSRFDetectedError("Too many redirects (potential infinite redirect loop).")
+        raise SSRFDetectedError("Too many redirects (possible redirect loop).")
 
 
 # Reusable default crawler instance
