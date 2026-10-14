@@ -11,7 +11,7 @@ import re
 from typing import Any, Final
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup, Comment, Tag
+from bs4 import BeautifulSoup, Tag
 
 from app.schemas import AuditReportData, HeadingStructure, LinkMetrics, MediaMetrics
 from app.utils import is_internal_link
@@ -46,10 +46,11 @@ NON_CONTENT_TAGS: Final[set[str]] = {
     "header",
     "footer",
     "nav",
+    "aside",
 }
 
 WORD_REGEX: Final[re.Pattern[str]] = re.compile(
-    r"[\w\u0600-\u06FF]+(?:[-'’][\w\u0600-\u06FF]+)*",
+    r"[\w\u0600-\u06FF\u200c]+(?:[-'’][\w\u0600-\u06FF\u200c]+)*",
     re.UNICODE,
 )
 
@@ -106,7 +107,7 @@ class SEOAnalyzer:
                 "rel": lambda val: (
                     any(str(item).lower() == "canonical" for item in val)
                     if isinstance(val, list)
-                    else str(val).lower() == "canonical"
+                    else bool(val and str(val).lower() == "canonical")
                 )
             },
         )
@@ -134,23 +135,15 @@ class SEOAnalyzer:
         )
 
     def extract_text_and_word_count(self) -> tuple[str, int]:
-        # استخراج کل استرینگ‌ها با حذف کامل تمام اجداد نامربوط (نه فقط والد مستقیم)
-        visible_chunks: list[str] = []
+        """استخراج بهینه متن با ساخت کپی تمیز برای جلوگیری از O(N*D) traversal."""
+        body = self.soup.find("body") or self.soup
+        content_soup = BeautifulSoup(str(body), "lxml")
 
-        for element in self.soup.find_all(string=True):
-            if isinstance(element, Comment):
-                continue
-            # بررسی کل زنجیره والدین برای تضمین عدم وجود در هدر، فوتر، اسکریپت و...
-            parent_names = {parent.name.lower() for parent in element.parents if parent and parent.name}
-            if parent_names.intersection(NON_CONTENT_TAGS):
-                continue
+        for tag in content_soup.find_all(NON_CONTENT_TAGS):
+            tag.decompose()
 
-            cleaned = element.strip()
-            if cleaned:
-                visible_chunks.append(cleaned)
-
-        raw_text = " ".join(visible_chunks)
-        normalized_text = self._normalize_space(raw_text)
+        cleaned_text = content_soup.get_text(separator=" ", strip=True)
+        normalized_text = self._normalize_space(cleaned_text)
         word_count = len(WORD_REGEX.findall(normalized_text))
         return normalized_text, word_count
 
@@ -235,7 +228,6 @@ class SEOAnalyzer:
             try:
                 parsed = json.loads(content)
                 if isinstance(parsed, dict):
-                    # مدیریت اسکیماهای تو در تو و ساختار Yoast / RankMath
                     if "@graph" in parsed and isinstance(parsed["@graph"], list):
                         schemas.extend(item for item in parsed["@graph"] if isinstance(item, dict))
                     else:
@@ -250,14 +242,14 @@ class SEOAnalyzer:
         html_lower = self.raw_html.lower()
         generator = (self.extract_meta_content("generator") or "").lower()
 
-        signals = [
+        signals = (
             "wordpress" in generator,
             "/wp-content/" in html_lower,
             "/wp-includes/" in html_lower,
             "wp-json" in html_lower,
             "wp-emoji" in html_lower,
             "wp-block-library" in html_lower,
-        ]
+        )
         return any(signals)
 
     # -----------------------------------------------------
@@ -269,14 +261,13 @@ class SEOAnalyzer:
         social = self.extract_social_graph()
         _, word_count = self.extract_text_and_word_count()
 
-        # استخراج ساختاریافته تایپ‌های JSON-LD
         schema_types: list[str] = []
         for s in schemas:
             schema_type = s.get("@type")
             if isinstance(schema_type, str):
                 schema_types.append(schema_type)
             elif isinstance(schema_type, list):
-                schema_types.extend(str(t) for t in schema_type)
+                schema_types.extend(str(t) for t in schema_type if isinstance(t, str))
 
         return AuditReportData(
             title=self.extract_title(),
