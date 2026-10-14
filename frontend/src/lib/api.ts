@@ -44,7 +44,7 @@ export class ApiError extends Error {
 }
 
 /**
- * فرمت‌بندی خطاهای اعتبارسنجی 422 در Pydantic/FastAPI
+ * Format Pydantic V2 and FastAPI 422 validation errors into human-readable strings.
  */
 function extractErrorMessage(
   errorData: ApiErrorResponse | unknown,
@@ -56,7 +56,12 @@ function extractErrorMessage(
     if (typeof data.detail === "string") return data.detail;
     if (Array.isArray(data.detail) && data.detail.length > 0) {
       return data.detail
-        .map((err) => `${err.loc.filter((l) => l !== "body").join(".")}: ${err.msg}`)
+        .map((err) => {
+          const path = Array.isArray(err.loc)
+            ? err.loc.filter((l) => String(l) !== "body").join(".")
+            : "";
+          return path ? `${path}: ${err.msg}` : err.msg;
+        })
         .join(" | ");
     }
     if (typeof data.message === "string") return data.message;
@@ -72,6 +77,33 @@ async function parseJsonSafely<T>(response: Response): Promise<T | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Combine multiple AbortSignals with compatibility fallback for older runtimes.
+ */
+function combineSignals(signals: (AbortSignal | undefined)[]): AbortSignal {
+  const activeSignals = signals.filter(
+    (s): s is AbortSignal => typeof s !== "undefined"
+  );
+
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any(activeSignals);
+  }
+
+  const controller = new AbortController();
+  for (const signal of activeSignals) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      return controller.signal;
+    }
+    signal.addEventListener(
+      "abort",
+      () => controller.abort(signal.reason),
+      { once: true }
+    );
+  }
+  return controller.signal;
 }
 
 export interface AuditRequestOptions {
@@ -91,11 +123,7 @@ export const performAudit = async (
 
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
-
-  // ترکیب سیگنال ابورت کاربر با سیگنال تایم‌اوت به روش مدرن
-  const combinedSignal = options?.signal
-    ? AbortSignal.any([options.signal, timeoutSignal])
-    : timeoutSignal;
+  const combinedSignal = combineSignals([options?.signal, timeoutSignal]);
 
   try {
     const response = await fetch(AUDIT_ENDPOINT, {
@@ -129,14 +157,20 @@ export const performAudit = async (
 
     return data;
   } catch (error: unknown) {
-    if (error instanceof DOMException && error.name === "TimeoutError") {
+    const isTimeout =
+      (error instanceof DOMException && error.name === "TimeoutError") ||
+      (combinedSignal.aborted &&
+        (combinedSignal.reason?.name === "TimeoutError" ||
+          timeoutSignal.aborted));
+
+    if (isTimeout) {
       throw new Error(
         `مهلت پردازش به پایان رسید (بیش از ${timeoutMs / 1000} ثانیه). سرور یا دامنه مقصد پاسخگو نیست.`
       );
     }
 
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw error; // لغو دستی توسط کاربر
+      throw error;
     }
 
     if (error instanceof TypeError) {
