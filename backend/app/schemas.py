@@ -5,14 +5,16 @@ Orchestrates HTTP fetching, DOM parsing, heuristic scoring, and REST responses.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Final
+from typing import Annotated, Final
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -21,9 +23,11 @@ from app.http_client import SafeAsyncCrawler
 from app.schemas import (
     AuditErrorDetail,
     AuditErrorResponse,
+    AuditReportData,
     AuditRequest,
     AuditResponse,
     HealthResponse,
+    ScoreResult,
 )
 from app.scorer import SEOScorer
 from app.security import (
@@ -61,8 +65,7 @@ logger = logging.getLogger("wp_seo_inspector")
 def get_allowed_origins() -> list[str]:
     """Parses and validates comma-separated CORS origins."""
     raw_origins = os.getenv("ALLOWED_ORIGINS")
-
-    if raw_origins is None:
+    if not raw_origins:
         return list(DEFAULT_ALLOWED_ORIGINS)
 
     return [
@@ -76,7 +79,6 @@ def get_allowed_origins() -> list[str]:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Creates shared application resources and closes them on shutdown."""
     logger.info("Initializing %s v%s...", APP_NAME, APP_VERSION)
-
     crawler = SafeAsyncCrawler()
     app.state.crawler = crawler
 
@@ -89,7 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 # ---------------------------------------------------------
-# FASTAPI APPLICATION
+# FASTAPI APPLICATION & MIDDLEWARE
 # ---------------------------------------------------------
 app = FastAPI(
     title=APP_NAME,
@@ -109,104 +111,71 @@ app.add_middleware(
 )
 
 
+def get_crawler(request: Request) -> SafeAsyncCrawler:
+    """Dependency provider for the shared network crawler."""
+    return request.app.state.crawler
+
+
 # ---------------------------------------------------------
-# ERROR RESPONSE HELPERS
+# ERROR RESPONSE FACTORY & HANDLERS
 # ---------------------------------------------------------
-def build_error_response(
-    error_type: str,
-    message: str,
-    status_code: int,
-) -> JSONResponse:
-    """Builds a consistent API error response."""
+def build_error_response(error_type: str, message: str, status_code: int) -> JSONResponse:
     payload = AuditErrorResponse(
-        error=AuditErrorDetail(
-            type=error_type,
-            message=message,
-        )
+        error=AuditErrorDetail(type=error_type, message=message)
     )
-
-    return JSONResponse(
-        status_code=status_code,
-        content=payload.model_dump(),
-    )
+    return JSONResponse(status_code=status_code, content=payload.model_dump())
 
 
-# ---------------------------------------------------------
-# EXCEPTION HANDLERS
-# ---------------------------------------------------------
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    error_msgs = "; ".join(f"{err['loc'][-1]}: {err['msg']}" for err in exc.errors())
+    logger.warning("Validation rejection on %s: %s", request.url.path, error_msgs)
+    return build_error_response("validation_error", error_msgs, status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+
 @app.exception_handler(SSRFDetectedError)
 @app.exception_handler(InvalidTargetURLError)
-async def security_url_exception_handler(
-    request: Request,
-    exc: Exception,
-) -> JSONResponse:
-    logger.warning(
-        "Security rejection on %s: %s",
-        request.url.path,
-        str(exc),
-    )
-
-    return build_error_response(
-        error_type="security_violation",
-        message=str(exc),
-        status_code=status.HTTP_400_BAD_REQUEST,
-    )
+async def security_url_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.warning("Security rejection on %s: %s", request.url.path, str(exc))
+    return build_error_response("security_violation", str(exc), status.HTTP_400_BAD_REQUEST)
 
 
 @app.exception_handler(PayloadTooLargeError)
-async def payload_size_exception_handler(
-    request: Request,
-    exc: PayloadTooLargeError,
-) -> JSONResponse:
-    logger.warning(
-        "Payload exceeded cap on %s: %s",
-        request.url.path,
-        str(exc),
-    )
-
-    return build_error_response(
-        error_type="payload_too_large",
-        message=str(exc),
-        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-    )
+async def payload_size_exception_handler(request: Request, exc: PayloadTooLargeError) -> JSONResponse:
+    logger.warning("Payload exceeded cap on %s: %s", request.url.path, str(exc))
+    return build_error_response("payload_too_large", str(exc), status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(
-    request: Request,
-    exc: Exception,
-) -> JSONResponse:
-    logger.exception(
-        "Unhandled runtime error during %s %s",
-        request.method,
-        request.url.path,
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled runtime error during %s %s", request.method, request.url.path)
+    return build_error_response(
+        "internal_server_error",
+        "An unexpected error occurred during the technical SEO audit.",
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
     )
 
-    return build_error_response(
-        error_type="internal_server_error",
-        message=(
-            "An unexpected error occurred during the technical SEO audit."
-        ),
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    )
+
+# ---------------------------------------------------------
+# CPU-BOUND WORKER
+# ---------------------------------------------------------
+def _process_dom_and_score(html: str, base_url: str, fetch_result: object) -> tuple[AuditReportData, ScoreResult]:
+    """Runs synchronous BeautifulSoup and heuristic computations inside worker thread."""
+    analyzer = SEOAnalyzer(html=html, base_url=base_url)
+    report_data = analyzer.analyze()
+
+    scorer = SEOScorer(report_data=report_data, fetch_result=fetch_result)
+    score_result = scorer.calculate()
+
+    return report_data, score_result
 
 
 # ---------------------------------------------------------
 # ENDPOINTS
 # ---------------------------------------------------------
-@app.get(
-    "/health",
-    response_model=HealthResponse,
-    tags=["System"],
-    summary="Service Health Check",
-)
+@app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check() -> HealthResponse:
-    """Verifies service availability."""
-    return HealthResponse(
-        status="healthy",
-        service=APP_NAME,
-        version=APP_VERSION,
-    )
+    return HealthResponse(status="healthy", service=APP_NAME, version=APP_VERSION)
 
 
 @app.post(
@@ -215,53 +184,25 @@ async def health_check() -> HealthResponse:
     status_code=status.HTTP_200_OK,
     tags=["Audit Engine"],
     summary="Execute Technical SEO Audit",
-    description=(
-        "Asynchronously crawls target URL, parses DOM elements, "
-        "and computes heuristic scores."
-    ),
 )
 async def audit_page(
     payload: AuditRequest,
-    request: Request,
+    crawler: Annotated[SafeAsyncCrawler, Depends(get_crawler)],
 ) -> AuditResponse:
-    """
-    Executes the complete technical SEO audit lifecycle:
-
-    1. Secure asynchronous network fetch.
-    2. DOM parsing via BeautifulSoup and lxml.
-    3. Heuristic SEO scoring.
-    4. Response serialization according to the API schema.
-    """
     target_url = str(payload.url)
 
-    crawler: SafeAsyncCrawler = request.app.state.crawler
-
-    # -----------------------------------------------------
-    # Step 1: Secure HTTP Fetch
-    # -----------------------------------------------------
+    # 1. Non-blocking Network I/O
     fetch_result = await crawler.fetch(target_url)
 
-    # -----------------------------------------------------
-    # Step 2: DOM Analysis
-    # -----------------------------------------------------
-    analyzer = SEOAnalyzer(
+    # 2 & 3. Offload CPU-bound Parsing & Scoring to Worker Thread
+    report_data, score_result = await asyncio.to_thread(
+        _process_dom_and_score,
         html=fetch_result.html,
         base_url=fetch_result.final_url,
-    )
-    report_data = analyzer.analyze()
-
-    # -----------------------------------------------------
-    # Step 3: Heuristic Scoring
-    # -----------------------------------------------------
-    scorer = SEOScorer(
-        report_data=report_data,
         fetch_result=fetch_result,
     )
-    score_result = scorer.calculate()
 
-    # -----------------------------------------------------
-    # Step 4: API Response
-    # -----------------------------------------------------
+    # 4. API Response Construction
     return AuditResponse(
         url=target_url,
         final_url=fetch_result.final_url,
