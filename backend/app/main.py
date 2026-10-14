@@ -5,14 +5,16 @@ Orchestrates HTTP fetching, DOM parsing, heuristic scoring, and REST responses.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Final
+from typing import Annotated, Final
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -62,7 +64,7 @@ def get_allowed_origins() -> list[str]:
     """Parses and validates comma-separated CORS origins."""
     raw_origins = os.getenv("ALLOWED_ORIGINS")
 
-    if raw_origins is None:
+    if not raw_origins:
         return list(DEFAULT_ALLOWED_ORIGINS)
 
     return [
@@ -110,6 +112,15 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------
+# DEPENDENCIES
+# ---------------------------------------------------------
+def get_crawler(request: Request) -> SafeAsyncCrawler:
+    """Dependency injection provider for the persistent crawler."""
+    crawler: SafeAsyncCrawler = request.app.state.crawler
+    return crawler
+
+
+# ---------------------------------------------------------
 # ERROR RESPONSE HELPERS
 # ---------------------------------------------------------
 def build_error_response(
@@ -134,6 +145,22 @@ def build_error_response(
 # ---------------------------------------------------------
 # EXCEPTION HANDLERS
 # ---------------------------------------------------------
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    """Standardizes Pydantic input validation failures."""
+    error_msgs = "; ".join(f"{e['loc'][-1]}: {e['msg']}" for e in exc.errors())
+    logger.warning("Validation rejection on %s: %s", request.url.path, error_msgs)
+
+    return build_error_response(
+        error_type="validation_error",
+        message=error_msgs,
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    )
+
+
 @app.exception_handler(SSRFDetectedError)
 @app.exception_handler(InvalidTargetURLError)
 async def security_url_exception_handler(
@@ -184,11 +211,23 @@ async def unhandled_exception_handler(
 
     return build_error_response(
         error_type="internal_server_error",
-        message=(
-            "An unexpected error occurred during the technical SEO audit."
-        ),
+        message="An unexpected error occurred during the technical SEO audit.",
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )
+
+
+# ---------------------------------------------------------
+# CPU-BOUND PROCESSING HELPERS
+# ---------------------------------------------------------
+def _execute_sync_audit(html: str, base_url: str, fetch_result: object) -> tuple[object, object]:
+    """Helper method to isolate CPU-intensive operations inside a thread."""
+    analyzer = SEOAnalyzer(html=html, base_url=base_url)
+    report_data = analyzer.analyze()
+
+    scorer = SEOScorer(report_data=report_data, fetch_result=fetch_result)
+    score_result = scorer.calculate()
+
+    return report_data, score_result
 
 
 # ---------------------------------------------------------
@@ -216,52 +255,29 @@ async def health_check() -> HealthResponse:
     tags=["Audit Engine"],
     summary="Execute Technical SEO Audit",
     description=(
-        "Asynchronously crawls target URL, parses DOM elements, "
+        "Asynchronously crawls target URL, parses DOM elements off-thread, "
         "and computes heuristic scores."
     ),
 )
 async def audit_page(
     payload: AuditRequest,
-    request: Request,
+    crawler: Annotated[SafeAsyncCrawler, Depends(get_crawler)],
 ) -> AuditResponse:
-    """
-    Executes the complete technical SEO audit lifecycle:
-
-    1. Secure asynchronous network fetch.
-    2. DOM parsing via BeautifulSoup and lxml.
-    3. Heuristic SEO scoring.
-    4. Response serialization according to the API schema.
-    """
+    """Executes the complete technical SEO audit lifecycle."""
     target_url = str(payload.url)
 
-    crawler: SafeAsyncCrawler = request.app.state.crawler
-
-    # -----------------------------------------------------
-    # Step 1: Secure HTTP Fetch
-    # -----------------------------------------------------
+    # 1. Non-blocking Network I/O
     fetch_result = await crawler.fetch(target_url)
 
-    # -----------------------------------------------------
-    # Step 2: DOM Analysis
-    # -----------------------------------------------------
-    analyzer = SEOAnalyzer(
+    # 2 & 3. Offload CPU-bound DOM parsing and Scoring to a worker thread
+    report_data, score_result = await asyncio.to_thread(
+        _execute_sync_audit,
         html=fetch_result.html,
         base_url=fetch_result.final_url,
-    )
-    report_data = analyzer.analyze()
-
-    # -----------------------------------------------------
-    # Step 3: Heuristic Scoring
-    # -----------------------------------------------------
-    scorer = SEOScorer(
-        report_data=report_data,
         fetch_result=fetch_result,
     )
-    score_result = scorer.calculate()
 
-    # -----------------------------------------------------
-    # Step 4: API Response
-    # -----------------------------------------------------
+    # 4. API Response Construction
     return AuditResponse(
         url=target_url,
         final_url=fetch_result.final_url,
