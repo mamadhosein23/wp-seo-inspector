@@ -1,7 +1,6 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -44,24 +43,20 @@
     --ring: 217.2 91.2% 59.8%;
     color-scheme: dark;
   }
-
   *, *::before, *::after {
     @apply border-border;
     box-sizing: border-box;
   }
-
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
     min-height: 100dvh;
   }
 }
-
 @keyframes shimmer {
   100% {
     transform: translateX(100%);
   }
 }
-
 @layer components {
   /* Dynamic glassmorphic card component */
   .card-pro {
@@ -88,7 +83,6 @@
     );
     animation: shimmer 2s infinite;
   }
-
   /* Neon CTA button with micro-interactions */
   .btn-neon {
     @apply relative inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 
@@ -96,12 +90,10 @@
       transition-all duration-300 will-change-transform 
       hover:scale-[1.02] hover:shadow-[0_0_25px_hsl(var(--primary)/0.6)] active:scale-[0.98];
   }
-
   /* Pulse status radar indicator */
   .status-radar {
     @apply relative flex h-2.5 w-2.5;
   }
-  
   .status-radar span:first-child {
     @apply absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75;
   }
