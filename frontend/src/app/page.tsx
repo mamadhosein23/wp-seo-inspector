@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useCallback } from "react";
 import {
   AlertCircle,
@@ -18,35 +17,28 @@ interface AuditState {
   data: AuditResponse | null;
   error: string | null;
 }
-
 export default function Home() {
   const [state, setState] = useState<AuditState>({
     status: "idle",
     data: null,
     error: null,
   });
-
   const handleAuditStart = useCallback(() => {
     setState({ status: "loading", data: null, error: null });
   }, []);
-
   const handleAuditComplete = useCallback((result: AuditResponse) => {
     setState({ status: "success", data: result, error: null });
   }, []);
-
   const handleError = useCallback((message: string) => {
     setState({ status: "error", data: null, error: message });
   }, []);
-
   const handleReset = useCallback(() => {
     setState({ status: "idle", data: null, error: null });
   }, []);
-
   const isLoading = state.status === "loading";
   const isError = state.status === "error";
   const isSuccess = state.status === "success" && state.data !== null;
   const isIdle = state.status === "idle";
-
   return (
     <main
       dir="rtl"
@@ -59,18 +51,15 @@ export default function Home() {
             <Sparkles aria-hidden="true" className="size-3.5" />
             <span dir="ltr">FastAPI + Next.js Technical Audit Engine</span>
           </div>
-
           <h1 className="text-4xl font-black tracking-tight text-foreground sm:text-5xl">
             <span dir="ltr">
               WP SEO <span className="text-primary">Inspector</span>
             </span>
           </h1>
-
           <p className="mx-auto max-w-2xl text-lg font-medium text-muted-foreground sm:text-xl">
             تحلیل عمیق سئوی تکنیکال، ساختار داده و اسکیماهای استاندارد وردپرس
           </p>
         </header>
-
         {/* Audit trigger form */}
         <section aria-label="فرم شروع تحلیل" className="relative z-10">
           <UrlForm
@@ -79,7 +68,6 @@ export default function Home() {
             onError={handleError}
           />
         </section>
-
         {/* Live status announcements and loading/error states */}
         <div aria-atomic="true" aria-live="polite">
           {isLoading && (
@@ -96,7 +84,6 @@ export default function Home() {
                   />
                 </div>
               </div>
-
               <div className="space-y-2">
                 <p className="text-base font-bold text-foreground">
                   در حال واکشی صفحه و اجرای تحلیل جامع...
@@ -106,7 +93,6 @@ export default function Home() {
                   لینک‌ها و داده‌های ساختاریافته؛ معمولاً ۵ تا ۱۵ ثانیه
                 </p>
               </div>
-
               <div
                 aria-hidden="true"
                 className="grid grid-cols-3 gap-3 pt-2"
@@ -117,7 +103,6 @@ export default function Home() {
               </div>
             </section>
           )}
-
           {isError && (
             <section
               role="alert"
@@ -129,7 +114,6 @@ export default function Home() {
                     aria-hidden="true"
                     className="mt-0.5 size-5 shrink-0 text-destructive"
                   />
-
                   <div className="space-y-1 text-start text-sm">
                     <p className="font-bold text-destructive">
                       خطا در اجرای تحلیل
@@ -139,7 +123,6 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
-
                 <button
                   type="button"
                   onClick={handleReset}
@@ -152,14 +135,12 @@ export default function Home() {
             </section>
           )}
         </div>
-
         {/* Dashboard report display */}
         {isSuccess && state.data && (
           <section aria-label="نتیجه تحلیل سئو" className="pt-4">
             <AuditDashboard result={state.data} />
           </section>
         )}
-
         {/* Introductory feature cards shown only in idle state */}
         {isIdle && (
           <section
@@ -178,7 +159,6 @@ export default function Home() {
                 کنونیکال.
               </p>
             </article>
-
             <article className="card-pro space-y-2 p-5 text-start">
               <div className="w-fit rounded-lg bg-emerald-500/10 p-2 text-emerald-500">
                 <Layers aria-hidden="true" className="size-4" />
@@ -191,7 +171,6 @@ export default function Home() {
                 BreadcrumbList.
               </p>
             </article>
-
             <article className="card-pro space-y-2 p-5 text-start">
               <div className="w-fit rounded-lg bg-amber-500/10 p-2 text-amber-500">
                 <Sparkles aria-hidden="true" className="size-4" />
