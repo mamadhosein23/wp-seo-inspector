@@ -1,4 +1,5 @@
 # 🔍 WP SEO Inspector
+
 **A High-Performance Technical SEO Audit Engine & Analytics Interface.**
 
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -45,18 +46,20 @@ The audit isn't just a checklist; it's a **Deductive Weighting System**. We star
 
 ## 📂 Repository Structure
 ```text
-├── backend/app/
-│   ├── main.py          # FastAPI Entry Point & Routing
-│   ├── analyzer.py      # DOM Extraction Logic
-│   ├── scorer.py        # Rule-based Scoring Engine
-│   ├── http_client.py   # Async Web Fetching
-│   └── schemas.py       # Pydantic Models for Type Safety
-└── frontend/src/
+wp-seo-inspector/
+├── backend/
+│   └── app/
+│       ├── __init__.py
+│       ├── main.py          # FastAPI Entry Point & Routing
+│       ├── analyzer.py      # DOM Extraction Logic
+│       ├── scorer.py        # Rule-based Scoring Engine
+│       ├── http_client.py   # Async Web Fetching
+│       ├── schemas.py       # Pydantic Models for Type Safety
+│       ├── security.py      # Security & Validation Utilities
+│       └── utils.py         # Helper Functions
+└── frontend/
+└── src/
 ├── app/             # Next.js Pages & Layouts
 ├── components/      # UI Elements (AuditDashboard, UrlForm)
-└── lib/             # API Fetching & Utility functions
-
-
-
-
-
+├── lib/             # API Fetching & Utility functions
+└── types/           # TypeScript Type Definitions
