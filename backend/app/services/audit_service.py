@@ -1,34 +1,59 @@
-# backend/app/services/audit_service.py
-from backend.app.http_client import fetch_html
-from backend.app.analyzer import analyze_dom
-from backend.app.scorer import calculate_score
-from backend.app.cache import cache
+"""Application service for executing a single-page SEO audit."""
 
-async def run_full_audit(url: str) -> dict:
-    # ۱. بررسی وجود نتیجه در کش Redis
-    cache_key = f"seo_audit:{url}"
-    cached_result = await cache.get(cache_key)
-    if cached_result:
-        cached_result["source"] = "cache"
-        return cached_result
+from __future__ import annotations
 
-    # ۲. فچ کردن محتوای صفحه با httpx
-    html_content = await fetch_html(url)
+import asyncio
+from typing import Any
 
-    # ۳. استخراج اطلاعات DOM با BeautifulSoup
-    extracted_signals = analyze_dom(html_content, url)
+from app.analyzer import SEOAnalyzer
+from app.http_client import SafeAsyncCrawler
+from app.schemas import AuditResponse
+from app.scorer import SEOScorer
 
-    # ۴. محاسبه امتیاز نهایی با موتور امتیازدهی
-    audit_score = calculate_score(extracted_signals)
 
-    result = {
-        "url": url,
-        "signals": extracted_signals,
-        "score": audit_score,
-        "source": "fresh"
-    }
+def _analyze_and_score(
+    html: str,
+    base_url: str,
+    fetch_result: Any,
+) -> tuple[Any, Any]:
+    """Run synchronous DOM parsing and scoring outside the event loop."""
+    analyzer = SEOAnalyzer(html=html, base_url=base_url)
+    report_data = analyzer.analyze()
 
-    # ۵. ذخیره در کش با انقضای ۱ ساعته
-    await cache.set(cache_key, result, expire_seconds=3600)
+    scorer = SEOScorer(
+        report_data=report_data,
+        fetch_result=fetch_result,
+    )
+    score_result = scorer.calculate()
 
-    return result
+    return report_data, score_result
+
+
+class AuditService:
+    """Coordinates fetching, analysis, scoring, and response construction."""
+
+    def __init__(self, crawler: SafeAsyncCrawler) -> None:
+        self._crawler = crawler
+
+    async def run(self, target_url: str) -> AuditResponse:
+        fetch_result = await self._crawler.fetch(target_url)
+
+        report_data, score_result = await asyncio.to_thread(
+            _analyze_and_score,
+            fetch_result.html,
+            fetch_result.final_url,
+            fetch_result,
+        )
+
+        return AuditResponse(
+            url=target_url,
+            final_url=fetch_result.final_url,
+            status_code=fetch_result.status_code,
+            response_time_ms=fetch_result.response_time_ms,
+            content_type=fetch_result.content_type,
+            redirect_chain=fetch_result.redirect_history,
+            score=score_result.total_score,
+            score_breakdown=score_result.breakdown,
+            checks=score_result.checks,
+            data=report_data,
+        )
