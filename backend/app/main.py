@@ -1,15 +1,11 @@
-"""WP SEO Inspector - FastAPI Application Entry Point.
-
-Orchestrates HTTP fetching, DOM parsing, heuristic scoring, and REST responses.
-"""
+"""WP SEO Inspector - FastAPI application entry point."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import sys
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Final
 
@@ -18,7 +14,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.analyzer import SEOAnalyzer
 from app.http_client import SafeAsyncCrawler
 from app.schemas import (
     AuditErrorDetail,
@@ -27,30 +22,26 @@ from app.schemas import (
     AuditResponse,
     HealthResponse,
 )
-from app.scorer import SEOScorer
 from app.security import (
     InvalidTargetURLError,
     PayloadTooLargeError,
     SSRFDetectedError,
 )
+from app.services.audit_service import AuditService
 
-# ---------------------------------------------------------
-# CONSTANTS & CONFIGURATION
-# ---------------------------------------------------------
-APP_NAME: Final[str] = "WP SEO Inspector API"
-APP_VERSION: Final[str] = "1.2.0"
-APP_DESCRIPTION: Final[str] = (
+
+APP_NAME: Final = "WP SEO Inspector API"
+APP_VERSION: Final = "1.2.0"
+APP_DESCRIPTION: Final = (
     "High-Performance Technical SEO Audit & Heuristic Scoring Engine"
 )
 
-DEFAULT_ALLOWED_ORIGINS: Final[tuple[str, ...]] = (
+DEFAULT_ALLOWED_ORIGINS: Final = (
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 )
 
-# ---------------------------------------------------------
-# LOGGING
-# ---------------------------------------------------------
+
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
@@ -61,23 +52,23 @@ logger = logging.getLogger("wp_seo_inspector")
 
 
 def get_allowed_origins() -> list[str]:
-    """Parses and validates comma-separated CORS origins."""
-    raw_origins = os.getenv("ALLOWED_ORIGINS")
+    """Read comma-separated CORS origins from the environment."""
+    raw = os.getenv("ALLOWED_ORIGINS", "")
 
-    if not raw_origins:
+    if not raw.strip():
         return list(DEFAULT_ALLOWED_ORIGINS)
 
     return [
         origin.strip().rstrip("/")
-        for origin in raw_origins.split(",")
+        for origin in raw.split(",")
         if origin.strip()
     ]
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Creates shared application resources and closes them on shutdown."""
-    logger.info("Initializing %s v%s...", APP_NAME, APP_VERSION)
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Keep one crawler per API process and close it on shutdown."""
+    logger.info("Starting %s v%s", APP_NAME, APP_VERSION)
 
     crawler = SafeAsyncCrawler()
     app.state.crawler = crawler
@@ -85,14 +76,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
-        logger.info("Gracefully shutting down %s...", APP_NAME)
         await crawler.close()
-        logger.info("HTTP crawler closed successfully.")
+        logger.info("HTTP crawler closed")
 
 
-# ---------------------------------------------------------
-# FASTAPI APPLICATION
-# ---------------------------------------------------------
 app = FastAPI(
     title=APP_NAME,
     version=APP_VERSION,
@@ -111,24 +98,23 @@ app.add_middleware(
 )
 
 
-# ---------------------------------------------------------
-# DEPENDENCIES
-# ---------------------------------------------------------
 def get_crawler(request: Request) -> SafeAsyncCrawler:
-    """Dependency injection provider for the persistent crawler."""
-    crawler: SafeAsyncCrawler = request.app.state.crawler
-    return crawler
+    """Provide the crawler owned by the application lifespan."""
+    return request.app.state.crawler
 
 
-# ---------------------------------------------------------
-# ERROR RESPONSE HELPERS
-# ---------------------------------------------------------
+def get_audit_service(
+    crawler: Annotated[SafeAsyncCrawler, Depends(get_crawler)],
+) -> AuditService:
+    """Construct a lightweight service using the shared crawler."""
+    return AuditService(crawler)
+
+
 def build_error_response(
     error_type: str,
     message: str,
     status_code: int,
 ) -> JSONResponse:
-    """Builds a consistent API error response."""
     payload = AuditErrorResponse(
         error=AuditErrorDetail(
             type=error_type,
@@ -138,25 +124,33 @@ def build_error_response(
 
     return JSONResponse(
         status_code=status_code,
-        content=payload.model_dump(),
+        content=payload.model_dump(mode="json"),
     )
 
 
-# ---------------------------------------------------------
-# EXCEPTION HANDLERS
-# ---------------------------------------------------------
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
     request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
-    """Standardizes Pydantic input validation failures."""
-    error_msgs = "; ".join(f"{e['loc'][-1]}: {e['msg']}" for e in exc.errors())
-    logger.warning("Validation rejection on %s: %s", request.url.path, error_msgs)
+    """Return validation errors in the project's standard error format."""
+    messages = []
+
+    for error in exc.errors():
+        location = ".".join(str(part) for part in error["loc"])
+        messages.append(f"{location}: {error['msg']}")
+
+    message = "; ".join(messages)
+
+    logger.warning(
+        "Validation rejection on %s: %s",
+        request.url.path,
+        message,
+    )
 
     return build_error_response(
         error_type="validation_error",
-        message=error_msgs,
+        message=message,
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
     )
 
@@ -168,9 +162,9 @@ async def security_url_exception_handler(
     exc: Exception,
 ) -> JSONResponse:
     logger.warning(
-        "Security rejection on %s: %s",
+        "Rejected target on %s: %s",
         request.url.path,
-        str(exc),
+        exc,
     )
 
     return build_error_response(
@@ -186,9 +180,9 @@ async def payload_size_exception_handler(
     exc: PayloadTooLargeError,
 ) -> JSONResponse:
     logger.warning(
-        "Payload exceeded cap on %s: %s",
+        "Payload limit exceeded on %s: %s",
         request.url.path,
-        str(exc),
+        exc,
     )
 
     return build_error_response(
@@ -204,7 +198,7 @@ async def unhandled_exception_handler(
     exc: Exception,
 ) -> JSONResponse:
     logger.exception(
-        "Unhandled runtime error during %s %s",
+        "Unhandled error during %s %s",
         request.method,
         request.url.path,
     )
@@ -216,23 +210,6 @@ async def unhandled_exception_handler(
     )
 
 
-# ---------------------------------------------------------
-# CPU-BOUND PROCESSING HELPERS
-# ---------------------------------------------------------
-def _execute_sync_audit(html: str, base_url: str, fetch_result: object) -> tuple[object, object]:
-    """Helper method to isolate CPU-intensive operations inside a thread."""
-    analyzer = SEOAnalyzer(html=html, base_url=base_url)
-    report_data = analyzer.analyze()
-
-    scorer = SEOScorer(report_data=report_data, fetch_result=fetch_result)
-    score_result = scorer.calculate()
-
-    return report_data, score_result
-
-
-# ---------------------------------------------------------
-# ENDPOINTS
-# ---------------------------------------------------------
 @app.get(
     "/health",
     response_model=HealthResponse,
@@ -240,7 +217,6 @@ def _execute_sync_audit(html: str, base_url: str, fetch_result: object) -> tuple
     summary="Service Health Check",
 )
 async def health_check() -> HealthResponse:
-    """Verifies service availability."""
     return HealthResponse(
         status="healthy",
         service=APP_NAME,
@@ -254,39 +230,10 @@ async def health_check() -> HealthResponse:
     status_code=status.HTTP_200_OK,
     tags=["Audit Engine"],
     summary="Execute Technical SEO Audit",
-    description=(
-        "Asynchronously crawls target URL, parses DOM elements off-thread, "
-        "and computes heuristic scores."
-    ),
 )
 async def audit_page(
     payload: AuditRequest,
-    crawler: Annotated[SafeAsyncCrawler, Depends(get_crawler)],
+    service: Annotated[AuditService, Depends(get_audit_service)],
 ) -> AuditResponse:
-    """Executes the complete technical SEO audit lifecycle."""
-    target_url = str(payload.url)
-
-    # 1. Non-blocking Network I/O
-    fetch_result = await crawler.fetch(target_url)
-
-    # 2 & 3. Offload CPU-bound DOM parsing and Scoring to a worker thread
-    report_data, score_result = await asyncio.to_thread(
-        _execute_sync_audit,
-        html=fetch_result.html,
-        base_url=fetch_result.final_url,
-        fetch_result=fetch_result,
-    )
-
-    # 4. API Response Construction
-    return AuditResponse(
-        url=target_url,
-        final_url=fetch_result.final_url,
-        status_code=fetch_result.status_code,
-        response_time_ms=fetch_result.response_time_ms,
-        content_type=fetch_result.content_type,
-        redirect_chain=fetch_result.redirect_history,
-        score=score_result.total_score,
-        score_breakdown=score_result.breakdown,
-        checks=score_result.checks,
-        data=report_data,
-    )
+    """Execute a single-page audit without changing the existing API."""
+    return await service.run(str(payload.url))
