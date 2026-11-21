@@ -13,7 +13,7 @@ class RedisCache:
         self._client: Optional[Redis] = None
 
     async def connect(self) -> None:
-        """اتصال ایمن به ردیس در صورت عدم وجود کلاینت فعال."""
+        """Establish a secure connection to Redis."""
         if self._client is None:
             try:
                 self._client = redis.from_url(
@@ -21,36 +21,32 @@ class RedisCache:
                     decode_responses=True,
                     encoding="utf-8"
                 )
-                # تست اتصال اولیه (اختیاری اما حرفه‌ای)
                 await self._client.ping()
             except RedisError as e:
-                logger.error(f"خطا در اتصال به ردیس: {e}")
+                logger.error(f"Redis connection failed: {e}")
                 self._client = None
                 raise
 
     async def close(self) -> None:
-        """بستن ایمن اتصال ردیس."""
+        """Gracefully close the Redis connection."""
         if self._client:
             await self._client.close()
             self._client = None
 
     async def get(self, key: str) -> Optional[Any]:
-        """دریافت مقدار از کش با مدیریت خطای JSON و Redis."""
+        """Fetch data with error handling for JSON and Redis."""
         try:
             if not self._client:
                 await self.connect()
             
             data = await self._client.get(key)
-            if not data:
-                return None
-                
-            return json.loads(data)
+            return json.loads(data) if data else None
         except (RedisError, json.JSONDecodeError) as e:
-            logger.warning(f"خطا در خواندن کلید {key} از کش: {e}")
+            logger.warning(f"Error fetching key '{key}' from cache: {e}")
             return None
 
     async def set(self, key: str, value: Any, expire_seconds: int = 3600) -> bool:
-        """ذخیره مقدار در کش با تعیین زمان انقضا."""
+        """Store data in cache with TTL."""
         try:
             if not self._client:
                 await self.connect()
@@ -59,19 +55,19 @@ class RedisCache:
             await self._client.set(key, serialized_data, ex=expire_seconds)
             return True
         except (RedisError, TypeError) as e:
-            logger.error(f"خطا در نوشتن کلید {key} در کش: {e}")
+            logger.error(f"Error setting key '{key}' in cache: {e}")
             return False
 
     async def delete(self, key: str) -> bool:
-        """حذف یک کلید از کش (اضافه شده برای تکمیل قابلیت‌ها)."""
+        """Remove a key from the cache."""
         try:
             if not self._client:
                 await self.connect()
             await self._client.delete(key)
             return True
         except RedisError as e:
-            logger.error(f"خطا در حذف کلید {key} از کش: {e}")
+            logger.error(f"Error deleting key '{key}' from cache: {e}")
             return False
 
-# نمونه سراسری (Singleton)
+# Singleton instance
 cache = RedisCache()
