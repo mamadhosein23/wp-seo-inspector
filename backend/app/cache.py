@@ -1,73 +1,73 @@
+# backend/app/cache.py
 import json
-import logging
-from typing import Any, Optional
-import redis.asyncio as redis
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
+from typing import Any
 
-logger = logging.getLogger(__name__)
+from redis.asyncio import Redis
+from redis.asyncio import from_url
+
 
 class RedisCache:
-    def __init__(self, redis_url: str = "redis://localhost:6379/0"):
-        self.redis_url = redis_url
-        self._client: Optional[Redis] = None
+    def __init__(self, redis_url: str = "redis://localhost:6379/0") -> None:
+        self._redis_url = redis_url
+        self._client: Redis | None = None
 
     async def connect(self) -> None:
-        """Establish a secure connection to Redis."""
+        """Create the Redis client and verify the connection."""
         if self._client is None:
+            client = from_url(
+                self._redis_url,
+                decode_responses=True,
+                health_check_interval=30,
+            )
             try:
-                self._client = redis.from_url(
-                    self.redis_url, 
-                    decode_responses=True,
-                    encoding="utf-8"
-                )
-                await self._client.ping()
-            except RedisError as e:
-                logger.error(f"Redis connection failed: {e}")
-                self._client = None
+                await client.ping()
+            except Exception:
+                await client.aclose()
                 raise
+            self._client = client
 
     async def close(self) -> None:
-        """Gracefully close the Redis connection."""
-        if self._client:
-            await self._client.close()
+        """Close the Redis client and its connection pool."""
+        if self._client is not None:
+            await self._client.aclose()
             self._client = None
 
-    async def get(self, key: str) -> Optional[Any]:
-        """Fetch data with error handling for JSON and Redis."""
-        try:
-            if not self._client:
-                await self.connect()
-            
-            data = await self._client.get(key)
-            return json.loads(data) if data else None
-        except (RedisError, json.JSONDecodeError) as e:
-            logger.warning(f"Error fetching key '{key}' from cache: {e}")
+    async def get(self, key: str) -> Any | None:
+        """Return a decoded JSON value, or None if the key does not exist."""
+        client = await self._get_client()
+        data = await client.get(key)
+
+        if data is None:
             return None
 
-    async def set(self, key: str, value: Any, expire_seconds: int = 3600) -> bool:
-        """Store data in cache with TTL."""
-        try:
-            if not self._client:
-                await self.connect()
-                
-            serialized_data = json.dumps(value, ensure_ascii=False)
-            await self._client.set(key, serialized_data, ex=expire_seconds)
-            return True
-        except (RedisError, TypeError) as e:
-            logger.error(f"Error setting key '{key}' in cache: {e}")
-            return False
+        return json.loads(data)
+
+    async def set(
+        self,
+        key: str,
+        value: Any,
+        expire_seconds: int | None = 3600,
+    ) -> None:
+        """Store a JSON-serializable value; use None for no expiration."""
+        if expire_seconds is not None and expire_seconds <= 0:
+            raise ValueError("expire_seconds must be greater than 0 or None")
+
+        client = await self._get_client()
+        payload = json.dumps(value, ensure_ascii=False)
+        await client.set(key, payload, ex=expire_seconds)
 
     async def delete(self, key: str) -> bool:
-        """Remove a key from the cache."""
-        try:
-            if not self._client:
-                await self.connect()
-            await self._client.delete(key)
-            return True
-        except RedisError as e:
-            logger.error(f"Error deleting key '{key}' from cache: {e}")
-            return False
+        """Delete a key; return True only if it existed."""
+        client = await self._get_client()
+        return bool(await client.delete(key))
 
-# Singleton instance
+    async def _get_client(self) -> Redis:
+        if self._client is None:
+            await self.connect()
+
+        # connect() guarantees that _client is set.
+        assert self._client is not None
+        return self._client
+
+
 cache = RedisCache()
