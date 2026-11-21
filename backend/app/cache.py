@@ -1,4 +1,4 @@
-# backend/app/cache.py
+
 import json
 from typing import Optional
 import redis.asyncio as redis
