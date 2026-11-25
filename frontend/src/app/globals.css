@@ -1,122 +1,136 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
 @layer base {
   :root {
-    /* Base & Surfaces */
-    --background: 0 0% 100%;
-    --foreground: 224 71.4% 4.1%;
-    --card: 0 0% 100%;
-    --card-foreground: 224 71.4% 4.1%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 71.4% 4.1%;
+    /* OKLCH: L (Lightness), C (Chroma), H (Hue) */
+    --background: oklch(0.99 0.002 240);
+    --foreground: oklch(0.14 0.02 240);
+    
+    --card: oklch(1 0 0 / 0.85);
+    --card-foreground: oklch(0.14 0.02 240);
+    --card-border: oklch(0.92 0.01 240 / 0.8);
 
-    /* Brand / Accents */
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 220 14.3% 95.9%;
-    --secondary-foreground: 220.9 39.3% 11%;
-    --muted: 220 14.3% 95.9%;
-    --muted-foreground: 220 8.9% 46.1%;
-    --accent: 220 14.3% 95.9%;
-    --accent-foreground: 220.9 39.3% 11%;
+    --primary: oklch(0.55 0.22 255);
+    --primary-foreground: oklch(0.98 0.01 240);
 
-    /* Functional States */
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --success: 142.1 76.2% 36.3%;
-    --success-foreground: 355.7 100% 97.3%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 48 96% 89%;
+    --secondary: oklch(0.96 0.01 240);
+    --secondary-foreground: oklch(0.2 0.03 240);
 
-    /* Borders & Structural */
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.75rem;
+    --muted: oklch(0.96 0.005 240);
+    --muted-foreground: oklch(0.5 0.02 240);
+
+    --accent: oklch(0.95 0.03 255);
+    --accent-foreground: oklch(0.2 0.05 255);
+
+    --destructive: oklch(0.6 0.22 25);
+    --destructive-foreground: oklch(0.98 0 0);
+
+    --success: oklch(0.62 0.19 145);
+    --success-foreground: oklch(0.98 0 0);
+
+    --border: oklch(0.9 0.01 240 / 0.7);
+    --ring: oklch(0.55 0.22 255 / 0.4);
 
     color-scheme: light;
   }
 
   .dark {
-    /* Base & Surfaces (Deep Zinc/OLED Style) */
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 4.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 4.9%;
-    --popover-foreground: 0 0% 98%;
+    /* OLED-Ready Deep Contrast */
+    --background: oklch(0.1 0.015 240);
+    --foreground: oklch(0.98 0.005 240);
+    
+    --card: oklch(0.14 0.02 240 / 0.75);
+    --card-foreground: oklch(0.98 0.005 240);
+    --card-border: oklch(1 1 1 / 0.08);
 
-    /* Brand / Accents */
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
+    --primary: oklch(0.65 0.22 255);
+    --primary-foreground: oklch(0.12 0.02 240);
 
-    /* Functional States */
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --success: 142.1 70.6% 45.3%;
-    --success-foreground: 144.9 80.4% 10%;
-    --warning: 37.7 92.1% 50.2%;
-    --warning-foreground: 26 83.3% 14.1%;
+    --secondary: oklch(0.18 0.02 240);
+    --secondary-foreground: oklch(0.98 0.005 240);
 
-    /* Borders & Structural */
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 217.2 91.2% 59.8%;
+    --muted: oklch(0.18 0.015 240);
+    --muted-foreground: oklch(0.65 0.02 240);
+
+    --accent: oklch(0.22 0.04 255);
+    --accent-foreground: oklch(0.98 0.01 255);
+
+    --destructive: oklch(0.5 0.2 25);
+    --destructive-foreground: oklch(0.98 0 0);
+
+    --success: oklch(0.65 0.18 145);
+    --success-foreground: oklch(0.1 0.02 145);
+
+    --border: oklch(0.25 0.015 240 / 0.6);
+    --ring: oklch(0.65 0.22 255 / 0.5);
 
     color-scheme: dark;
   }
 
   *, *::before, *::after {
-    @apply border-border;
+    border-color: var(--border);
     box-sizing: border-box;
   }
 
   html {
-    @apply scroll-smooth text-rendering-geometricPrecision;
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
   }
 
   body {
-    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
+    background-color: var(--background);
+    color: var(--foreground);
     min-height: 100dvh;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+    @apply antialiased selection:bg-primary/25 selection:text-primary;
   }
 }
 
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+/* -------------------------------------------------------------------------- */
+/* Keyframes & Springs                                                        */
+/* -------------------------------------------------------------------------- */
+@keyframes sweep {
+  0% { transform: translateX(-150%) skewX(-20deg); }
+  50%, 100% { transform: translateX(200%) skewX(-20deg); }
 }
 
-@keyframes pulse-radar {
+@keyframes pulse-ring {
   0% { transform: scale(0.95); opacity: 0.8; }
-  70% { transform: scale(2.2); opacity: 0; }
-  100% { transform: scale(2.2); opacity: 0; }
+  60% { transform: scale(2.4); opacity: 0; }
+  100% { transform: scale(2.4); opacity: 0; }
 }
 
 @layer components {
-  /* Modern Bento/Glassmorphic Card */
+  /* 1. Next-Gen Bento Card: لبه‌های نوری براق (Specular Edge) + بک‌دراپ داینامیک */
   .card-pro {
-    @apply relative isolate overflow-hidden rounded-2xl border border-border/70 
-      bg-card/75 p-6 backdrop-blur-md 
-      transition-all duration-300 ease-out
-      hover:-translate-y-1 hover:border-primary/40 hover:bg-card/90 
-      hover:shadow-2xl hover:shadow-primary/10;
+    @apply relative isolate overflow-hidden rounded-3xl p-6 backdrop-blur-2xl transition-all;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    box-shadow: 
+      0 1px 2px 0 oklch(0 0 0 / 0.03),
+      0 10px 30px -10px oklch(0 0 0 / 0.08);
+    transition-duration: 400ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1); /* Spring-like */
   }
 
-  /* Shimmer Button (Fixed: Clickable + Smooth Mask) */
+  .card-pro:hover {
+    transform: translateY(-3px);
+    box-shadow: 
+      0 0 0 1px var(--primary),
+      0 20px 40px -15px oklch(0 0 0 / 0.15);
+  }
+
+  /* 2. Interactive Shimmer Button: ماسک زاویه‌دار طبیعی بدون بلاک کردن پوینتر */
   .btn-shimmer {
-    @apply relative inline-flex h-11 items-center justify-center overflow-hidden rounded-xl 
-      border border-border bg-card px-6 text-sm font-medium text-foreground 
-      shadow-sm transition-all duration-200
-      hover:border-primary/50 hover:bg-accent/40 hover:text-accent-foreground
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+    @apply relative inline-flex h-11 items-center justify-center overflow-hidden rounded-2xl
+      px-6 text-sm font-medium transition-all duration-200 select-none;
+    background: var(--card);
+    color: var(--foreground);
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 2px oklch(0 0 0 / 0.04);
   }
 
   .btn-shimmer::after {
@@ -125,67 +139,87 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      hsl(var(--foreground) / 0.08) 50%,
+      oklch(1 1 1 / 0.15) 50%,
       transparent 100%
     );
-    animation: shimmer 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    animation: sweep 3.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 
-  /* Glow / High-Impact CTA */
+  .btn-shimmer:hover {
+    border-color: var(--ring);
+    background: var(--secondary);
+  }
+
+  .btn-shimmer:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--primary);
+  }
+
+  /* 3. High-Conversion Glow Button (Micro-spring physics) */
   .btn-neon {
-    @apply relative inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 
-      text-sm font-semibold text-primary-foreground shadow-md
-      transition-all duration-300 ease-out will-change-transform 
-      hover:scale-[1.02] hover:shadow-[0_0_24px_hsl(var(--primary)/0.5)] 
-      active:scale-[0.98] 
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+    @apply relative inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-2.5 
+      text-sm font-semibold select-none transition-all;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    box-shadow: 0 4px 20px -2px oklch(from var(--primary) l c h / 0.4);
+    transition: transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 250ms ease;
   }
 
-  /* Refined Live Status Radar (Custom Keyframe for cleaner ping) */
+  .btn-neon:hover {
+    transform: scale(1.025) translateY(-1px);
+    box-shadow: 0 8px 30px oklch(from var(--primary) l c h / 0.6);
+  }
+
+  .btn-neon:active {
+    transform: scale(0.97) translateY(0);
+    box-shadow: 0 2px 10px oklch(from var(--primary) l c h / 0.3);
+  }
+
+  /* 4. Sub-pixel Radar Indicator */
   .status-radar {
-    @apply relative inline-flex h-2.5 w-2.5 items-center justify-center;
+    @apply relative inline-flex h-3 w-3 items-center justify-center;
   }
 
-  .status-radar span:first-child {
-    @apply absolute inline-flex h-full w-full rounded-full bg-success;
-    animation: pulse-radar 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+  .status-radar > span:first-child {
+    @apply absolute inline-flex h-full w-full rounded-full;
+    background-color: var(--success);
+    animation: pulse-ring 2.2s cubic-bezier(0.2, 0.4, 0.3, 1) infinite;
   }
 
-  .status-radar span:last-child {
-    @apply relative inline-flex h-2 w-2 rounded-full bg-success shadow-[0_0_8px_hsl(var(--success))];
+  .status-radar > span:last-child {
+    @apply relative inline-flex h-2 w-2 rounded-full;
+    background-color: var(--success);
+    box-shadow: 0 0 8px var(--success);
   }
 }
 
 @layer utilities {
-  /* Subtle Grain with automatic Dark Mode blending */
-  .bg-noise {
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.035'/%3E%3C/svg%3E");
-  }
-
-  .dark .bg-noise {
-    opacity: 0.05;
-    mix-blend-mode: overlay;
-  }
-
-  /* Interactive Cursor Spotlight Glow */
+  /* Spotlight با انتشار نور مخملی و طبیعی */
   .spotlight {
     background: radial-gradient(
-      550px circle at var(--x, 50%) var(--y, 50%),
-      hsl(var(--primary) / 0.12),
-      transparent 80%
+      600px circle at var(--x, 50%) var(--y, 50%),
+      oklch(from var(--primary) l c h / 0.12),
+      transparent 75%
     );
   }
 
-  /* Text balance utility for headlines */
+  /* نویز با متد ترکیب مدرن (سریع‌تر و بدون افت فریم) */
+  .bg-noise {
+    background-image: radial-gradient(rgba(128, 128, 128, 0.15) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  /* مهار کشیدگی متن در عناوین */
   .text-balance {
     text-wrap: balance;
   }
 }
 
-/* Accessibility: Turn off wild animations if user requested reduced motion */
+/* کاهش بار انیمیشن برای کاربران حساس */
 @media (prefers-reduced-motion: reduce) {
-  .btn-shimmer::after,
-  .status-radar span:first-child {
-    animation: none !important;
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
