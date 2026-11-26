@@ -1,3 +1,4 @@
+import { useState, useCallback } from "react";
 
 export interface AuditEvent {
   step: "INIT" | "FETCHED" | "RULE_EVALUATED" | "COMPLETE";
