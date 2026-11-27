@@ -5,7 +5,7 @@
 @layer base {
   :root {
     /* OKLCH: L (Lightness), C (Chroma), H (Hue) */
-    --background: oklch(0.99 0.002 240);
+    --background: oklch(0.99 0.002 241);
     --foreground: oklch(0.14 0.02 240);
     
     --card: oklch(1 0 0 / 0.85);
